@@ -71,6 +71,11 @@ Idempotency-Key: <unique-key>
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
+Encoding reminder:
+- For Chinese or other non-ASCII message text, send the payload as valid UTF-8 JSON with `Content-Type: application/json`.
+- Do not manually re-encode text, double-escape Unicode, or send form/query-encoded message bodies unless the API explicitly requires it; incorrect charset handling can cause garbled outbound messages.
+- If a user reports mojibake/garbled Chinese text, first inspect payload serialization, request headers, and client default encoding before retrying the dispatch.
+
 Required top-level fields:
 
 | Field | Required | Notes |
