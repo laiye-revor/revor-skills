@@ -1,6 +1,6 @@
 ---
 name: revor-company-research
-description: API-backed company research through Revor using public-web search, company contact discovery, and customs trade data. Use this skill when a user asks to research, investigate, profile, verify, or find contacts, suppliers, customers, product categories, trade trends, or source countries for a company. Return text or Markdown; do not depend on Revor's HTML dashboards or artifacts.
+description: Research and profile companies with Revor public-web evidence, contact discovery, and customs trade data. Use when a user asks for company background research, commercial due diligence, supplier or customer analysis, procurement intelligence, trade activity, key contacts, competitors, risks, or a decision-ready company report. Produce sourced Markdown rather than Revor-specific HTML artifacts.
 metadata:
   openclaw:
     requires:
@@ -10,256 +10,161 @@ metadata:
     envVars:
       - name: REVOR_API_KEY
         required: true
-        description: Revor API key used to run company research and read its jobs.
+        description: Revor API key.
       - name: REVOR_BASE_URL
         required: false
-        description: Optional Revor API base URL. Defaults to https://revor.ai.
+        description: Revor API base URL. Defaults to https://revor.ai.
     homepage: https://revor.ai
 ---
 
 # Revor Company Research
 
-## Goal
+## Mission
 
-Research a company with Revor's data APIs and synthesize the returned JSON into a concise, sourced Markdown report. Use only the capabilities needed for the request:
+Turn Revor data into a decision-ready company assessment. Do not merely list API results. Establish the correct company identity, connect evidence across sources, explain what the evidence means, and make uncertainty visible.
 
-- public company and web evidence through public-web research,
-- people and contact discovery through domain-based contact research,
-- customs counterparties, categories, trends, and countries through Revor Customs API.
+Return concise Markdown. Do not recreate Revor's HTML report, artifact UI, or contact tree.
 
-Do not reproduce Revor's HTML dashboard, contact tree, or artifact UI. Present useful fields directly as prose and Markdown tables.
+## Configure Revor
 
-## Configuration
+Read `REVOR_API_KEY` and optional `REVOR_BASE_URL` from the environment or `~/.config/RevorSkill/.env`. Default the base URL to `https://revor.ai`. Use the exact configured host; never guess another hostname. Never print or persist the key in outputs.
 
-Resolve configuration in this order:
+If the key is missing, direct the user to `https://revor.ai/my-api-keys`.
 
-1. `~/.config/RevorSkill/.env`
-2. platform-persistent environment configuration
-3. current process environment
-4. `<current-skill-dir>/.env`
+## Research Workflow
 
-OpenClaw does not automatically inject a dotenv file into every `exec` call. Before the first API request, load the selected dotenv file into the same shell process that invokes the HTTP client, or use values already present in the process environment. Never print the loaded values.
+### 1. Frame the decision
 
-Use:
+Infer what the user is trying to decide, not just what data they requested. Typical goals include:
 
-```bash
-REVOR_BASE_URL="https://revor.ai"
-REVOR_API_KEY=""
-```
+- understanding a company before outreach or a meeting,
+- assessing a buyer, supplier, or competitor,
+- finding relevant decision-makers,
+- evaluating sourcing patterns and trade dependence,
+- checking risks, inconsistencies, or recent changes.
 
-If `REVOR_API_KEY` is missing, direct the user to `https://revor.ai/my-api-keys`. When asked to configure a supplied key, store it in `~/.config/RevorSkill/.env` without printing it. Never put a real key in this skill, prompts, memory, logs, reports, or committed files. Mask keys in all output.
+Confirm the target company, relevant country or market, and desired depth from context. If the name is ambiguous, resolve identity before using paid endpoints.
 
-Normalize `REVOR_BASE_URL` by removing a trailing slash. Send the key as:
+### 2. Resolve company identity
 
-```http
-Authorization: Bearer <REVOR_API_KEY>
-```
+Use public-web research first when the official domain or legal identity is uncertain. Establish:
 
-Use exactly the configured `REVOR_BASE_URL`. Never guess, probe, or substitute another hostname such as `api.revor.ai`. If the configured base URL returns `404`, report that deployment mismatch instead of changing hosts.
+- official and trading names,
+- official domain,
+- headquarters and operating markets,
+- core products or services,
+- whether the evidence refers to the same entity.
 
-## Choose the Smallest Useful Workflow
+Do not merge similarly named companies. Prefer the company's own website and primary documents; use reputable news, registries, and industry sources for corroboration. Treat directories and search snippets as leads rather than definitive proof.
 
-### General or comprehensive company research
+### 3. Build an evidence plan
 
-1. Search the public web to establish the official site, domain, legal or trading names, location, products, and recent evidence.
-2. Query contacts only after resolving a credible company domain.
-3. Query the full customs report only when the user requests trade intelligence or a comprehensive background report and a customs-compatible company name is available.
-4. Synthesize the evidence; distinguish sourced facts, API data, and inference.
+Call only the data needed to answer the decision question:
 
-### Public information only
-
-Call only `POST /api/v2/research/public-web`.
-
-### Contacts or organization only
-
-Resolve the official domain if necessary, then call only `POST /api/v2/research/contacts`. Never pass a company name where a domain is required.
-
-### Focused customs question
-
-Use one focused endpoint instead of the full report:
-
-| User intent | Endpoint |
+| Need | Revor capability |
 | --- | --- |
-| suppliers, customers, counterparties | `/api/v2/customs/counterparties` |
-| products, HS codes, trade categories | `/api/v2/customs/categories` |
-| volume, value, or activity over time | `/api/v2/customs/trends` |
-| origin or destination countries | `/api/v2/customs/countries` |
-| all four customs sections | `/api/v2/customs/trade-reports` |
+| identity, products, positioning, recent events | public-web research |
+| relevant executives or functional contacts | contact research |
+| suppliers, customers, or trading partners | customs counterparties |
+| products and HS categories | customs categories |
+| activity, growth, decline, or seasonality | customs trends |
+| source or destination concentration | customs countries |
+| broad trade assessment | full customs report |
 
-Do not call the full report and its four component endpoints for the same request. That duplicates provider work and billing.
+Start narrow. Expand only when the first result exposes a meaningful gap. Do not call the full customs report and its component endpoints for the same scope.
 
-## Common Request and Job Protocol
+### 4. Gather and interpret evidence
 
-All research and customs POST endpoints use the same job protocol. Include:
+For every important claim, retain its source, date, and scope. Separate:
 
-```http
-Content-Type: application/json
-Accept: application/json
-Authorization: Bearer <REVOR_API_KEY>
-Idempotency-Key: <stable-unique-key-for-this-logical-request>
-Prefer: wait=20
-```
+- **fact**: directly supported by returned evidence,
+- **inference**: a reasonable interpretation of multiple facts,
+- **unknown**: material information the available data cannot establish.
 
-Generate a unique idempotency key for a new logical request. Reuse the same key when retrying the exact same request after a network failure. Use a new key when any input changes.
+When sources conflict, show the conflict and favor the more direct, recent, and authoritative source. Do not turn absence of evidence into evidence of absence.
 
-Handle responses as follows:
+Interpret each dataset rather than dumping it:
 
-1. On HTTP `200`, inspect `item.status`; do not assume success from HTTP alone.
-2. On HTTP `202`, or whenever `item.status` is non-terminal, read `item.id`, then poll `GET /api/v2/jobs/{id}` with the same Bearer key every 2 seconds until terminal. Polling is mandatory; never present `scheduled` or `running` as the completed research result.
-3. Treat `succeeded`, `failed`, and `cancelled` as terminal states.
-4. Stop polling after 180 seconds and return the job ID so the user can resume later.
-5. On `succeeded`, read data from `item.result` and billing from `item.billing`.
-6. On `failed`, report `item.error` without fabricating a result.
+- **Public web:** explain the business model, products, markets, positioning, and meaningful recent developments.
+- **Contacts:** select people relevant to the user's goal; explain why each role matters. Treat title-based hierarchy as inferred, not verified.
+- **Counterparties:** identify concentration, repeated relationships, and likely supplier/customer roles from the chosen importer/exporter perspective.
+- **Categories:** translate HS codes and descriptions into understandable product groups; identify the commercially important mix.
+- **Trends:** distinguish sustained direction from one-off spikes and note the exact period.
+- **Countries:** identify geographic concentration, diversification, and possible supply-chain exposure without overstating causality.
 
-The server supports short synchronous waiting, not separate `/sync` routes. A request may still return `202` after `Prefer: wait=20`.
-An idempotent replay can return an older `scheduled` POST snapshot even when the job has since reached a terminal state. Treat the latest GET job response as authoritative.
+Cross-check signals. For example, compare claimed products with customs categories, stated markets with trading countries, and the user's commercial goal with the contact functions returned.
 
-## Public-Web Research
+### 5. Form conclusions
 
-Call `POST /api/v2/research/public-web` with:
+Answer the user's underlying questions explicitly:
 
-```json
-{
-  "queries": [
-    "Acme Inc official company profile products",
-    "Acme Inc recent news partnerships"
-  ],
-  "search_limit": 5,
-  "category": "company",
-  "include_domains": [],
-  "user_location": "US"
-}
-```
+- What does this company appear to do and where does it operate?
+- What evidence suggests its scale, activity, or commercial priorities?
+- What relationships or product categories matter most?
+- Who appears relevant to contact, and why?
+- What risks, contradictions, or data gaps could change the conclusion?
+- What is the most useful next verification step?
 
-Rules:
+Use confidence labels when they add value:
 
-- Supply one or two distinct queries; never more than two.
-- Keep `search_limit` between 1 and 10 per query. Default to 5 unless broader evidence is necessary.
-- Allowed `category` values are `company`, `news`, `financial report`, `people`, and `personal site`. Omit it for mixed research.
-- Supply no more than five `include_domains`.
-- Use an ISO 3166-1 alpha-2 `user_location` such as `US` or `GB`; omit it when unknown.
-- Cite the returned source URLs near the claims they support.
-- Treat search snippets as evidence leads, not authoritative legal identity by themselves.
+- **High:** direct primary evidence or consistent evidence from multiple sources.
+- **Medium:** credible but indirect, dated, or only singly sourced.
+- **Low:** inference from sparse, ambiguous, or conflicting evidence.
 
-Expected result shape:
+## Report Structure
 
-```text
-item.result.status
-item.result.queries
-item.result.searched_queries
-item.result.results[].query
-item.result.results[].sources[].{url,title,published_date,author,highlights,text}
-item.result.errors[]
-```
+Adapt the length to the request. A comprehensive report should normally contain:
 
-If the status is `partial`, use successful query groups and disclose which queries failed.
+1. **Executive assessment** — the most decision-relevant conclusions, not a generic summary.
+2. **Company identity** — names, domain, location, business, and identity confidence.
+3. **Business and recent developments** — products, markets, positioning, and notable changes with links.
+4. **Commercial or trade intelligence** — only when requested or relevant; state role and date range.
+5. **Relevant contacts** — role-focused shortlist with rationale; avoid unnecessary personal data.
+6. **Risks and unknowns** — conflicting evidence, missing coverage, and limitations.
+7. **Recommended next checks** — a short, prioritized list.
 
-## Contact Research
+Use tables for comparisons and concentrated datasets. Put source links beside the claims they support. Add a brief API usage and charged-credit note when the API returns billing information.
 
-Call `POST /api/v2/research/contacts` with:
+Never present raw JSON as the report. Never pad an empty section; omit irrelevant sections and state meaningful gaps plainly.
 
-```json
-{
-  "domain": "example.com",
-  "positions": ["CEO", "Procurement", "Supply Chain"],
-  "limit": 20,
-  "locale": "en"
-}
-```
+## Minimal API Reference
 
-Rules:
+Send `Authorization: Bearer <REVOR_API_KEY>`, JSON content, a stable `Idempotency-Key`, and `Prefer: wait=20`. A POST may return a job before completion; when it does, poll `GET /api/v2/jobs/{job_id}` until `succeeded`, `failed`, or `cancelled`. Reuse the idempotency key only for an exact retry.
 
-- Require a credible company or employee domain, not a company name or search-result URL.
-- Normalize away scheme, path, and leading `www.` before calling.
-- Supply at most 30 position filters. Omit `positions` to use the service defaults.
-- Keep `limit` between 1 and 50. Default to 20.
-- Use `locale: "en"` or `locale: "zh"` according to the user's language.
-- Treat the returned hierarchy as inferred from titles, not a verified reporting structure.
-- Never fabricate missing emails, LinkedIn URLs, titles, departments, or reporting lines.
-- Do not persist or expose more personal contact data than the user needs.
-
-Expected result shape:
+### Research endpoints
 
 ```text
-item.result.status
-item.result.domain
-item.result.company_name
-item.result.contacts[].{email,status,position,first_name,last_name,full_name,linkedin_url}
-item.result.nodes[].{id,kind,title,name,email,status,linkedin_url,department,seniority,sort_order}
-item.result.edges[].{from,to,relation,confidence,sort_order}
-item.result.note
+POST /api/v2/research/public-web
+  queries: 1-2 focused searches
+  search_limit: 1-10, normally 5
+  optional: category, include_domains, user_location
+
+POST /api/v2/research/contacts
+  domain: confirmed company domain, not company name
+  optional: positions, limit (1-50), locale (en|zh)
 ```
 
-`status: "no_result"` is a valid empty result, not a provider failure.
+Public-web sources contain URLs, titles, dates, highlights, and text. Contact results contain company/domain context, contacts, inferred nodes, and inferred edges.
 
-## Customs Research
-
-All customs endpoints accept the same base payload:
-
-```json
-{
-  "company_name": "ACME INC.",
-  "company_role": "importer",
-  "start_date": "2025-08-01",
-  "end_date": "2026-07-31",
-  "page": 1,
-  "page_size": 5,
-  "period_unit": "months",
-  "filters": {}
-}
-```
-
-Rules:
-
-- Use the best-supported legal or customs trading name. Preserve punctuation when supported by evidence.
-- Use `importer` for procurement, suppliers, and inbound trade. Use `exporter` for sales, customers, and outbound trade.
-- If dates are unspecified, use the most recent 12 complete calendar months: start on the first day 11 months before the last completed month and end on the last day of the last completed month.
-- Never request a range longer than one year.
-- Keep `page_size` between 1 and 20. Use 5 for concise research and 20 only when the user requests detail.
-- Use `months`, `quarters`, or `years` for `period_unit`.
-- Optional filters are `hs_code`, `product_description`, `origin_country_code`, and `destination_country_code`.
-- A successful empty result means no matching data for that exact name, role, date range, and filters. It does not prove that the company has no trade activity.
-- If appropriate, retry once with a better-supported legal-name variant or the opposite role, but explain the changed scope. Do not silently fan out many paid queries.
-
-Focused endpoints return:
+### Customs endpoints
 
 ```text
-item.result.company_name
-item.result.company_role
-item.result.catalog
-item.result.date_range
-item.result.section
-item.result.data.{page,items,total,page_size,returned_rows}
+POST /api/v2/customs/trade-reports
+POST /api/v2/customs/counterparties
+POST /api/v2/customs/categories
+POST /api/v2/customs/trends
+POST /api/v2/customs/countries
 ```
 
-The full report returns the same company context plus:
+Use `company_name`, `company_role` (`importer` or `exporter`), `start_date`, `end_date`, and a small `page_size`. If dates are unspecified, use the latest 12 complete calendar months. Do not request more than one year. Use a legal or customs trading-name variant supported by evidence.
 
-```text
-item.result.status
-item.result.sections.{counterparties,categories,trend,countries}
-```
+A successful empty customs result means no match for that exact name, role, period, and filters. It does not prove the company has no trade activity. Retry a better-supported name or opposite role only when the research context justifies it, and disclose the changed scope.
 
-## Reporting
+## Boundaries
 
-Match the user's language. For a comprehensive report, prefer this order:
-
-1. executive summary and confidence limits,
-2. company identity and public-web evidence,
-3. products, positioning, and recent developments,
-4. contacts relevant to the user's goal,
-5. customs counterparties, categories, trends, and countries when requested,
-6. gaps, caveats, and suggested next checks,
-7. API usage and charged credits when available.
-
-Use Markdown tables for compact comparisons. Include source links from public-web results. Label contact hierarchy as inferred. Label customs values with their exact date range and importer/exporter perspective. Never claim that an empty customs result disproves company existence or operations.
-
-## Error and Safety Rules
-
-- `401` or `403`: stop and ask the user to verify the API key and required permissions.
-- `411` or an insufficient-credit error: stop and explain that usable Revor credits are required.
-- `external_api_billing_retryable`: report that Revor could not complete billing preparation or settlement, include the job ID, and state the returned billing status and charged credits. Do not describe this as an empty provider result. Retry only if the user asks or the service later becomes healthy, reusing the same idempotency key for the exact request.
-- `429`: respect rate limits; retry only after the indicated delay.
-- `5xx`, timeout, or network failure: retry the same logical request with the same idempotency key, then fall back to job lookup if a job ID was received.
-- Never expose provider credentials, Revor keys, raw internal errors, or hidden configuration.
-- Do not use contacts for harassment, phishing, impersonation, fraud, or unreviewed mass outreach.
-- Do not turn research intent into permission to send messages. Use a separate outreach skill for any dispatch action.
+- Minimize paid calls and avoid duplicate scopes.
+- Report failed jobs and billing status; do not fabricate partial results.
+- Treat `external_api_billing_retryable` as a Revor billing preparation or settlement failure, not an empty provider result.
+- Do not invent contacts, emails, reporting lines, trade relationships, or causal explanations.
+- Do not expose unnecessary personal data or use contacts for harassment, phishing, impersonation, or unreviewed mass outreach.
+- Research does not authorize sending messages; require a separate outreach request and workflow.
