@@ -1,11 +1,13 @@
 ---
 name: revor-company-research
-description: Research and profile companies with Revor public-web evidence, contact discovery, and customs trade data. Use when a user asks for company background research, commercial due diligence, supplier or customer analysis, procurement intelligence, trade activity, key contacts, competitors, risks, or a decision-ready company report. Produce sourced Markdown rather than Revor-specific HTML artifacts.
+description: Research a company with Revor public-web evidence, customs entity resolution and trade data, and role-focused contacts. Use for company background checks, supplier or buyer due diligence, customer research, trade intelligence, commercial assessment, risk review, meeting preparation, or finding relevant company contacts. Produce a sourced, decision-oriented Markdown report without Revor HTML artifacts.
 metadata:
   openclaw:
     requires:
       env:
         - REVOR_API_KEY
+      config:
+        - ~/.config/RevorSkill/.env
     primaryEnv: REVOR_API_KEY
     envVars:
       - name: REVOR_API_KEY
@@ -19,152 +21,145 @@ metadata:
 
 # Revor Company Research
 
-## Mission
+Produce a practical company background report. Anchor it in the company's official public identity, then add customs and contact evidence when they can be matched reliably.
 
-Turn Revor data into a decision-ready company assessment. Do not merely list API results. Establish the correct company identity, connect evidence across sources, explain what the evidence means, and make uncertainty visible.
+Return sourced Markdown. Do not recreate Revor's HTML report or contact-tree UI. Do not narrate the research process.
 
-Return concise Markdown. Do not recreate Revor's HTML report, artifact UI, or contact tree.
+## Use the bundled client
 
-## Configure Revor
+Run the sibling script `scripts/revor-api.mjs` for every Revor data call. Resolve its path relative to this `SKILL.md`; do not rewrite its HTTP logic with inline JavaScript or curl.
 
-Read `REVOR_API_KEY` and optional `REVOR_BASE_URL` from the environment or `~/.config/RevorSkill/.env`. Default the base URL to `https://revor.ai`. Use the exact configured host; never guess another hostname. Never print or persist the key in outputs.
+The script reads `~/.config/RevorSkill/.env` before process environment values. Configure:
 
-If the key is missing, direct the user to `https://revor.ai/my-api-keys`.
+```text
+REVOR_API_KEY="..."
+REVOR_BASE_URL="https://revor.ai"
+```
 
-## Research Workflow
+Use the exact configured base URL. Never guess another hostname or print the key. Check configuration with:
 
-### 1. Frame the decision
+```text
+node <skill-dir>/scripts/revor-api.mjs config
+```
 
-Infer what the user is trying to decide, not just what data they requested. Typical goals include:
+All commands wait for the Revor job to finish and print one compact JSON result. If a command fails, use its returned error; do not substitute OpenClaw `web_search`, `web_fetch`, Google, Bing, DuckDuckGo, or arbitrary scraping. Never fabricate a report from unrelated search results.
 
-- understanding a company before outreach or a meeting,
-- assessing a buyer, supplier, or competitor,
-- finding relevant decision-makers,
-- evaluating sourcing patterns and trade dependence,
-- checking risks, inconsistencies, or recent changes.
+## Investigation flow
 
-Confirm the target company, relevant country or market, and desired depth from context. If the name is ambiguous, resolve identity before using paid endpoints.
+### 1. Establish the official baseline
 
-### 2. Resolve company identity
+Start with `public-web` and no more than two focused queries. The first batch must contain the exact company name supplied by the user as one bare-name query. Use the second query for a supplied domain, country/native name, or official profile page when useful.
 
-Use public-web research first when the official domain or legal identity is uncertain. Establish:
+```text
+node <client> public-web --query "Exact Company Name" --query "Focused identity query" --search-limit 5
+```
+
+Identify:
 
 - official and trading names,
-- official domain,
+- official domain and best official About, Company, Profile, or History page,
 - headquarters and operating markets,
-- core products or services,
-- whether the evidence refers to the same entity.
+- founding/start date when explicitly stated,
+- business model, products, services, represented brands, and channels,
+- named leadership when supported.
 
-Do not merge similarly named companies. Prefer the company's own website and primary documents; use reputable news, registries, and industry sources for corroboration. Treat directories and search snippets as leads rather than definitive proof.
+Prefer official pages, then government/institutional records, credible media, reputable databases, and finally social/directory sources. Reject same-name entities whose country, domain, or business does not match. Do not turn identity resolution into unnecessary legal forensics; distinguish brand, operator, parent, or predecessor only when it prevents a wrong match or changes the conclusion.
 
-### 3. Build an evidence plan
+### 2. Resolve the customs-data company name
 
-Call only the data needed to answer the decision question:
+Use an explicit date range of at most one year. Unless the user specifies otherwise, use the latest rolling 12 months ending on the current date. Keep exactly the same dates throughout candidate lookup and trade analysis.
 
-| Need | Revor capability |
-| --- | --- |
-| identity, products, positioning, recent events | public-web research |
-| relevant executives or functional contacts | contact research |
-| suppliers, customers, or trading partners | customs counterparties |
-| products and HS categories | customs categories |
-| activity, growth, decline, or seasonality | customs trends |
-| source or destination concentration | customs countries |
-| broad trade assessment | full customs report |
-
-Start narrow. Expand only when the first result exposes a meaningful gap. Do not call the full customs report and its component endpoints for the same scope.
-
-### 4. Gather and interpret evidence
-
-For every important claim, retain its source, date, and scope. Separate:
-
-- **fact**: directly supported by returned evidence,
-- **inference**: a reasonable interpretation of multiple facts,
-- **unknown**: material information the available data cannot establish.
-
-When sources conflict, show the conflict and favor the more direct, recent, and authoritative source. Do not turn absence of evidence into evidence of absence.
-
-Interpret each dataset rather than dumping it:
-
-- **Public web:** explain the business model, products, markets, positioning, and meaningful recent developments.
-- **Contacts:** select people relevant to the user's goal; explain why each role matters. Treat title-based hierarchy as inferred, not verified.
-- **Counterparties:** identify concentration, repeated relationships, and likely supplier/customer roles from the chosen importer/exporter perspective.
-- **Categories:** translate HS codes and descriptions into understandable product groups; identify the commercially important mix.
-- **Trends:** distinguish sustained direction from one-off spikes and note the exact period.
-- **Countries:** identify geographic concentration, diversification, and possible supply-chain exposure without overstating causality.
-
-Cross-check signals. For example, compare claimed products with customs categories, stated markets with trading countries, and the user's commercial goal with the contact functions returned.
-
-### 5. Form conclusions
-
-Answer the user's underlying questions explicitly:
-
-- What does this company appear to do and where does it operate?
-- What evidence suggests its scale, activity, or commercial priorities?
-- What relationships or product categories matter most?
-- Who appears relevant to contact, and why?
-- What risks, contradictions, or data gaps could change the conclusion?
-- What is the most useful next verification step?
-
-Use confidence labels when they add value:
-
-- **High:** direct primary evidence or consistent evidence from multiple sources.
-- **Medium:** credible but indirect, dated, or only singly sourced.
-- **Low:** inference from sparse, ambiguous, or conflicting evidence.
-
-## Report Structure
-
-Adapt the length to the request. A comprehensive report should normally contain:
-
-1. **Executive assessment** — the most decision-relevant conclusions, not a generic summary.
-2. **Company identity** — names, domain, location, business, and identity confidence.
-3. **Business and recent developments** — products, markets, positioning, and notable changes with links.
-4. **Commercial or trade intelligence** — only when requested or relevant; state role and date range.
-5. **Relevant contacts** — role-focused shortlist with rationale; avoid unnecessary personal data.
-6. **Risks and unknowns** — conflicting evidence, missing coverage, and limitations.
-7. **Recommended next checks** — a short, prioritized list.
-
-Use tables for comparisons and concentrated datasets. Put source links beside the claims they support. Add a brief API usage and charged-credit note when the API returns billing information.
-
-Never present raw JSON as the report. Never pad an empty section; omit irrelevant sections and state meaningful gaps plainly.
-
-## Minimal API Reference
-
-Send `Authorization: Bearer <REVOR_API_KEY>`, JSON content, a stable `Idempotency-Key`, and `Prefer: wait=20`. A POST may return a job before completion; when it does, poll `GET /api/v2/jobs/{job_id}` until `succeeded`, `failed`, or `cancelled`. Reuse the idempotency key only for an exact retry.
-
-### Research endpoints
+After public identity research, query the free company-candidate endpoint with the best-supported official/global name:
 
 ```text
-POST /api/v2/research/public-web
-  queries: 1-2 focused searches
-  search_limit: 1-10, normally 5
-  optional: category, include_domains, user_location
-
-POST /api/v2/research/contacts
-  domain: confirmed company domain, not company name
-  optional: positions, limit (1-50), locale (en|zh)
+node <client> company-candidates --company-name "Supported Company Name" --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
 ```
 
-Public-web sources contain URLs, titles, dates, highlights, and text. Contact results contain company/domain context, contacts, inferred nodes, and inferred edges.
+Do not pass a domain as `company-name`. Omit `--country-codes` unless the user explicitly supplied a country or region.
 
-### Customs endpoints
+The result checks both the original query and provider candidates as:
+
+- importer in import records,
+- exporter in export records.
+
+A positive count proves only that the exact returned name is queryable for that direction and period. It does not prove legal identity. Select a candidate only when public identity, country, business context, and the intended-direction count jointly support it.
+
+If the first lookup gives no reliable match, make one more lookup using a materially different name supported by the public research or candidate results. Do not invent suffixes, punctuation, translations, abbreviations, or legal forms. If no reliable match remains, stop the customs branch and state only that no reliable customs-data match was found for the tested names and scope.
+
+### 3. Choose the trade perspective
+
+- General background, procurement, supplier due diligence, or unspecified intent: use `company-role=importer`.
+- Sales, buyer discovery, or customer due diligence: use `company-role=exporter`.
+
+Only run a trade report when the chosen exact candidate has a positive count in that role. Copy the candidate name exactly. Run at most one full trade report for one company background check:
 
 ```text
-POST /api/v2/customs/trade-reports
-POST /api/v2/customs/counterparties
-POST /api/v2/customs/categories
-POST /api/v2/customs/trends
-POST /api/v2/customs/countries
+node <client> trade-report --company-name "Exact verified candidate" --company-role importer --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 10
 ```
 
-Use `company_name`, `company_role` (`importer` or `exporter`), `start_date`, `end_date`, and a small `page_size`. If dates are unspecified, use the latest 12 complete calendar months. Do not request more than one year. Use a legal or customs trading-name variant supported by evidence.
+Do not also call counterparties, categories, trends, and countries for the same scope after a successful full report. Use those focused commands only for a narrow follow-up question.
 
-A successful empty customs result means no match for that exact name, role, period, and filters. It does not prove the company has no trade activity. Retry a better-supported name or opposite role only when the research context justifies it, and disclose the changed scope.
+Interpret trade data rather than listing it:
 
-## Boundaries
+- rank counterparties by trade count, then weight, then quantity;
+- translate HS/category rows into understandable product groups;
+- sort periods before describing direction, volatility, peaks, or seasonality;
+- explain geographic and counterparty concentration only when returned totals support it;
+- treat zero/missing values and `N/A` labels as data limitations, not company risk.
 
-- Minimize paid calls and avoid duplicate scopes.
-- Report failed jobs and billing status; do not fabricate partial results.
-- Treat `external_api_billing_retryable` as a Revor billing preparation or settlement failure, not an empty provider result.
-- Do not invent contacts, emails, reporting lines, trade relationships, or causal explanations.
-- Do not expose unnecessary personal data or use contacts for harassment, phishing, impersonation, or unreviewed mass outreach.
-- Research does not authorize sending messages; require a separate outreach request and workflow.
+In importer mode, counterparties are upstream suppliers/exporters. In exporter mode, they are downstream buyers/importers.
+
+### 4. Research contacts once
+
+Contact research is independent of customs matching. Use the reliable employee/contact domain established during identity research, not a company name or an assumed storefront domain.
+
+```text
+node <client> contacts --domain "example.com" --positions "CEO|Procurement|Supply Chain" --limit 20 --locale en
+```
+
+Call it once in a normal background check:
+
+- after the trade report when a customs candidate was selected, or
+- directly when customs identity remains unresolved but the official domain is reliable.
+
+Choose positions relevant to the user's decision. Present at most five representative named contacts with title, function/seniority, and why the role matters. Treat inferred hierarchy as inferred. Empty or failed contact data is not evidence about company size, quality, or transparency.
+
+### 5. Fill material public-information gaps
+
+Use one further `public-web` batch of at most two separated queries for decision-relevant gaps such as:
+
+- scale, headcount, ownership, listing status, facilities, or major corporate development;
+- material news, partnerships, leadership changes, litigation, or regulatory signals from the last 24 months;
+- named products, customers, channels, and market position.
+
+Add another focused batch only when a material question remains unresolved. Do not combine unrelated goals into one bloated query. Do not claim public-web facts from an unread title or snippet when returned page text does not support them.
+
+## Evidence rules
+
+For every important claim, retain the source URL, date when relevant, and scope. Separate direct facts from reasonable inference and unknowns. When sources conflict, prefer the more direct, recent, and authoritative source; mention the discrepancy only when it changes interpretation.
+
+Never:
+
+- combine facts from similarly named companies;
+- invent products, customers, exclusive rights, contacts, trade relationships, financial trends, or risks;
+- infer inactivity, opacity, scale, or risk from an empty/failed customs or contact query;
+- treat `external_api_billing_retryable` as an empty provider result;
+- expose unnecessary personal data or turn research into unapproved outreach.
+
+## Report
+
+Write in the language of the user's latest message. Lead with the findings that matter for the likely decision. A comprehensive report should normally cover:
+
+1. Key judgments.
+2. Company identity, business, products/services, founding date, and current headquarters when found.
+3. Business scale and material corporate developments.
+4. Recent news and market signals from the last 24 months.
+5. Products, customers, channels, and partnerships.
+6. Leadership and organization when supported.
+7. Customs/trade findings, including the selected exact entity, role, and date range, when that branch succeeded.
+8. Relevant contacts when returned.
+9. Observed company-specific risks, separately from industry issues that still require verification.
+10. Concise commercial assessment and confidence.
+11. Public sources actually used.
+
+Omit unsupported or empty sections. Do not force a fixed template, star rating, generic risk checklist, or long recommendation list. Put links beside the claims they support. Add a short charged-credit note only when returned billing data is useful to the user.
