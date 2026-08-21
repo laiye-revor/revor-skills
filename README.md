@@ -11,7 +11,7 @@ Each skill is defined by a `SKILL.md` file and may include additional reference 
 The repository currently includes:
 
 - `revor-outreach`: function-triggered outreach execution via Revor, with guidance for LinkedIn, Email, WhatsApp, connected account checks, message dispatch, and LinkedIn post-like warm-up flows.
-- `revor-company-research`: API-backed company research using public-web evidence, domain-based contact discovery, and customs trade data, with Markdown output instead of Revor-specific HTML artifacts.
+- `revor-company-research`: API-backed company research using public-web evidence, domain-based contact discovery, and customs trade data, with a sourced, decision-oriented response in chat.
 
 More Revor workflow skills can be added under `skills/` as the project evolves.
 
@@ -29,6 +29,8 @@ npx skills add laiye-revor/revor-skills
 skills/
   revor-company-research/
     SKILL.md
+    scripts/
+      revor-api.mjs
   revor-outreach/
     SKILL.md
     reference/
