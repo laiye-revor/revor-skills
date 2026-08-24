@@ -12,6 +12,8 @@ The repository currently includes:
 
 - `revor-outreach`: function-triggered outreach execution via Revor, with guidance for LinkedIn, Email, WhatsApp, connected account checks, message dispatch, and LinkedIn post-like warm-up flows.
 - `revor-company-research`: API-backed company research using public-web evidence, domain-based contact discovery, and customs trade data, with a sourced, decision-oriented response in chat.
+- `revor-contact-search`: focused employee and decision-maker lookup by official company domain through the Revor contacts API.
+- `revor-company-discovery`: natural-language target-company discovery through Revor Websets, with automatic qualification, polling, and ranked results.
 
 More Revor workflow skills can be added under `skills/` as the project evolves.
 
@@ -31,6 +33,14 @@ skills/
     SKILL.md
     scripts/
       revor-api.mjs
+  revor-contact-search/
+    SKILL.md
+    scripts/
+      revor-contacts.mjs
+  revor-company-discovery/
+    SKILL.md
+    scripts/
+      revor-websets.mjs
   revor-outreach/
     SKILL.md
     reference/

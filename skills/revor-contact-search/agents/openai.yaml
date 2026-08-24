@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revor Contact Search"
+  short_description: "Find role-focused company contacts by domain"
+  default_prompt: "Use $revor-contact-search to find relevant contacts at a company domain."
