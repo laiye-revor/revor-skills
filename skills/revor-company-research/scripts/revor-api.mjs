@@ -172,18 +172,45 @@ function required(options, name) {
   return value
 }
 
+function countryCode(options, name) {
+  const value = one(options, name).toUpperCase()
+  if (value && !/^[A-Z]{2,3}$/.test(value)) throw new Error(`--${name} must be an ISO 3166-1 alpha-2 or alpha-3 country code`)
+  return value
+}
+
+function countryCodes(options) {
+  const values = one(options, "country-codes")
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+  if (values.some((value) => !/^[A-Z]{2,3}$/.test(value))) {
+    throw new Error("--country-codes must contain comma-separated ISO 3166-1 alpha-2 or alpha-3 country codes")
+  }
+  return [...new Set(values)].join(",")
+}
+
 function customsPayload(options) {
   const role = one(options, "company-role", "importer")
   if (role !== "importer" && role !== "exporter") throw new Error("--company-role must be importer or exporter")
+  const catalog = one(options, "catalog", role === "exporter" ? "exports" : "imports")
+  if (catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
+  const originCountryCode = countryCode(options, "origin-country-code")
+  const destinationCountryCode = countryCode(options, "destination-country-code")
   return {
     company_name: required(options, "company-name"),
     company_role: role,
+    catalog,
     start_date: required(options, "start-date"),
     end_date: required(options, "end-date"),
     page: integer(options, "page", 1, 1, 1_000),
     page_size: integer(options, "page-size", 10, 1, 20),
     period_unit: one(options, "period-unit", "months"),
-    filters: {},
+    filters: {
+      ...(one(options, "hs-code") ? { hs_code: one(options, "hs-code") } : {}),
+      ...(one(options, "product-description") ? { product_description: one(options, "product-description") } : {}),
+      ...(originCountryCode ? { origin_country_code: originCountryCode } : {}),
+      ...(destinationCountryCode ? { destination_country_code: destinationCountryCode } : {}),
+    },
   }
 }
 
@@ -218,15 +245,22 @@ function operationRequest(operation, options) {
     }
   }
   if (operation === "company-candidates") {
+    const role = one(options, "company-role")
+    if (role && role !== "importer" && role !== "exporter") throw new Error("--company-role must be importer or exporter")
+    const catalog = one(options, "catalog")
+    if (catalog && catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
+    const candidateCountryCodes = countryCodes(options)
     return {
       path: "/api/v2/customs/company-candidates",
       payload: {
         company_name: required(options, "company-name"),
+        ...(role ? { company_role: role } : {}),
+        ...(catalog ? { catalog } : {}),
         start_date: required(options, "start-date"),
         end_date: required(options, "end-date"),
         page: integer(options, "page", 1, 1, 1_000),
         page_size: integer(options, "page-size", 20, 1, 20),
-        ...(one(options, "country-codes") ? { country_codes: one(options, "country-codes") } : {}),
+        ...(candidateCountryCodes ? { country_codes: candidateCountryCodes } : {}),
       },
     }
   }
@@ -299,6 +333,29 @@ async function requestJson(config, apiPath, init = {}) {
   return body
 }
 
+function assertCompanyCandidateRouting(operation, request, item, config) {
+  if (operation !== "company-candidates" || item.status !== "succeeded") return
+  const expectedRole = request.payload.company_role
+  const expectedCatalog = request.payload.catalog
+  if (!expectedRole || !expectedCatalog) return
+  const candidates = Array.isArray(item.result?.candidates) ? item.result.candidates : []
+  const routingMatches = candidates.length > 0 && candidates.every((candidate) => (
+    candidate?.trade_counts?.company_role === expectedRole
+    && candidate?.trade_counts?.catalog === expectedCatalog
+  ))
+  if (!routingMatches) {
+    throw new RevorClientError("The Revor company-candidates endpoint did not honor explicit company_role/catalog routing", {
+      error_kind: "endpoint_contract_mismatch",
+      retryable: false,
+      recommended_action: "deploy_or_select_an_api_version_that_supports_explicit_customs_routing",
+      base_url: config.baseUrl,
+      path: request.path,
+      expected_company_role: expectedRole,
+      expected_catalog: expectedCatalog,
+    })
+  }
+}
+
 async function runJob(config, operation, request, options) {
   const idempotencyKey = `revor-skill-${operation}-${crypto.randomUUID()}`
   const initial = await requestJson(config, request.path, {
@@ -324,6 +381,7 @@ async function runJob(config, operation, request, options) {
   if (!terminalStatuses.has(String(item.status || ""))) {
     throw new Error(`Revor job timed out: ${item.id}`)
   }
+  assertCompanyCandidateRouting(operation, request, item, config)
 
   const output = {
     ok: item.status === "succeeded",
