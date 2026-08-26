@@ -64,6 +64,7 @@ The client prints `error_kind`, `retryable`, and `recommended_action` for failur
 | --- | --- |
 | `missing_api_key`, `authentication_failed` | Direct the user to [Revor API Keys](https://revor.ai/zh/my-api-keys) and ask them to send the created/replacement key in the current private conversation. After receiving it, save it to the returned `config_file`, rerun `config`, retry the failed command, and continue. Do not guess why the key was rejected or ask the user to edit the file unless writing fails. |
 | `invalid_configuration`, `endpoint_not_found` | Show the exact `base_url` and `path`. Ask the user to confirm/correct `REVOR_BASE_URL`; never guess or silently switch hosts. Then rerun `config`, retry the failed command, and continue. |
+| `endpoint_contract_mismatch` | Report that the configured API host does not yet support explicit customs role/catalog routing. Do not use legacy counts or continue to the paid report; retry after the matching backend version is deployed. |
 | `invalid_request`, `invalid_command` | Read the returned validation message. Correct a deterministic argument mistake and retry once. Ask the user only when their intended value is genuinely ambiguous. |
 | `request_timeout`, `connection_failed`, `rate_limited`, `service_unavailable`, `temporary_job_failure` | Retry the exact same command at most once; for rate limits, honor `retry_after` when present. If the second attempt fails, report the exact error and leave the task ready to resume from that command. |
 | `insufficient_credits` | Tell the user credits are insufficient. After they add credits, retry the failed command and continue. |
@@ -103,36 +104,41 @@ Identify:
 
 Prefer official pages, then government/institutional records, credible media, reputable databases, and finally social/directory sources. Reject same-name entities whose country, domain, or business does not match. Do not turn identity resolution into unnecessary legal forensics; distinguish brand, operator, parent, or predecessor only when it prevents a wrong match or changes the conclusion.
 
-### 2. Resolve the customs-data company name
+### 2. Choose the customs routing
+
+Choose the subject company's role and the customs data catalog independently before candidate lookup:
+
+- `company-role` says whether the researched company is the importer or exporter in each trade row.
+- `catalog` selects the `imports` or `exports` data directory. It does not change the subject company's role.
+- General background, procurement, or supplier diligence defaults to `importer/imports`.
+- Sales, buyer discovery, or customer diligence defaults to `exporter/exports`, but destination-country import data is often the better route. For example, Chinese exporter SANY selling to Indonesian buyers is `company-role=exporter`, `catalog=imports`, and `destination-country-code=IDN`.
+
+Do not assume importer always requires the imports catalog or exporter always requires the exports catalog. When evidence does not support a cross-catalog route, use the role-aligned default and state the selected routing in the final report.
+
+Use ISO 3166-1 alpha-3 country codes in Skill commands, such as `CHN`, `IDN`, or `PHL`. The API normalizes valid alpha-2 input, but do not send regional or invented codes such as `EU`.
+
+### 3. Resolve the customs-data company name
 
 Use an explicit date range of at most one year. Unless the user specifies otherwise, use the latest rolling 12 months ending on the current date. Keep exactly the same dates throughout candidate lookup and trade analysis.
 
 After public identity research, query the free company-candidate endpoint with the best-supported official/global name:
 
 ```text
-node <client> company-candidates --company-name "Supported Company Name" --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
+node <client> company-candidates --company-name "Supported Company Name" --company-role exporter --catalog imports --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
 ```
 
-Do not pass a domain as `company-name`. Omit `--country-codes` unless the user explicitly supplied a country or region.
+Do not pass a domain as `company-name`. Pass the selected `--company-role` and `--catalog` together. Omit `--country-codes` unless the user explicitly supplied a country for company-candidate filtering; when used, pass comma-separated alpha-3 codes.
 
-The result checks both the original query and provider candidates as:
-
-- importer in import records,
-- exporter in export records.
-
-A positive count proves only that the exact returned name is queryable for that direction and period. It does not prove legal identity. Select a candidate only when public identity, country, business context, and the intended-direction count jointly support it.
+The result verifies the original query and returned candidates using that exact role/catalog combination. A positive count proves only that the exact returned name is queryable for that routing and period. It does not prove legal identity. Select a candidate only when public identity, country, business context, and the routed count jointly support it.
 
 If the first lookup gives no reliable match, make one more lookup using a materially different name supported by the public research or candidate results. Do not invent suffixes, punctuation, translations, abbreviations, or legal forms. If no reliable match remains, end the customs branch and state only that no reliable customs-data match was found for the tested names and scope.
 
-### 3. Choose the trade perspective
+### 4. Run the trade report
 
-- General background, procurement, supplier due diligence, or unspecified intent: use `company-role=importer`.
-- Sales, buyer discovery, or customer due diligence: use `company-role=exporter`.
-
-Only run a trade report when the chosen exact candidate has a positive count in that role. Copy the candidate name exactly. Run at most one full trade report for one company background check:
+Only run a trade report when the chosen exact candidate has a positive count for the selected role/catalog combination. Copy the candidate name exactly and keep the same role, catalog, and dates used for candidate verification. Add alpha-3 origin or destination filters only when supported by the user's question. Run at most one full trade report for one company background check:
 
 ```text
-node <client> trade-report --company-name "Exact verified candidate" --company-role importer --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 10
+node <client> trade-report --company-name "Exact verified candidate" --company-role exporter --catalog imports --destination-country-code IDN --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 10
 ```
 
 Do not also call counterparties, categories, trends, and countries for the same scope after a successful full report. Use those focused commands only for a narrow follow-up question.
@@ -145,9 +151,9 @@ Interpret trade data rather than listing it:
 - explain geographic and counterparty concentration only when returned totals support it;
 - treat zero/missing values and `N/A` labels as data limitations, not company risk.
 
-In importer mode, counterparties are upstream suppliers/exporters. In exporter mode, they are downstream buyers/importers.
+The counterparty meaning follows `company-role`, not `catalog`: importer subjects have upstream suppliers/exporters; exporter subjects have downstream buyers/importers.
 
-### 4. Research contacts once
+### 5. Research contacts once
 
 Contact research is independent of customs matching. Use the reliable employee/contact domain established during identity research, not a company name or an assumed storefront domain.
 
@@ -162,7 +168,7 @@ Call it once in a normal background check:
 
 Choose positions relevant to the user's decision. Present at most five representative named contacts with title, function/seniority, and why the role matters. Treat inferred hierarchy as inferred. Empty or failed contact data is not evidence about company size, quality, or transparency.
 
-### 5. Fill material public-information gaps
+### 6. Fill material public-information gaps
 
 Use one further `public-web` batch of at most two separated queries for decision-relevant gaps such as:
 
@@ -181,7 +187,7 @@ Never:
 - combine facts from similarly named companies;
 - invent products, customers, exclusive rights, contacts, trade relationships, financial trends, or risks;
 - infer inactivity, opacity, scale, or risk from an empty/failed customs or contact query;
-- treat `external_api_billing_retryable` as an empty provider result;
+- treat `external_api_billing_retryable` as an empty data result;
 - expose unnecessary personal data or turn research into unapproved outreach.
 
 ## Compose the direct response
