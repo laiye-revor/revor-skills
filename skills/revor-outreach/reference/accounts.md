@@ -36,7 +36,7 @@ This file is the required first step for all actual send flows.
 1. User has a Revor account (with usable paid access if required by Revor plan/policy).
 2. User has a valid API key.
 3. User has connected at least one sendable channel account (LinkedIn / Email / WhatsApp).
-4. For the requested channel, a connected account exists with `status="ok"` and `can_send=true`.
+4. For the requested channel, a connected account exists with `can_send=true`. Use other status fields only as diagnostic context.
 
 If any of these are missing:
 - do not send,
@@ -46,7 +46,7 @@ If any of these are missing:
 
 Helpful links:
 - Register/login: `https://revor.ai`
-- API key page: `https://revor.ai/my-api-keys`
+- API key page: `https://revor.ai/zh/my-api-keys`
 - Connect send accounts: `https://revor.ai/console/connect`
 
 ---
@@ -132,7 +132,7 @@ Rules:
 ### 6.1 Fast smoke test
 
 ```http
-GET /api/v1/connect/accounts
+GET /api/v2/connect/accounts
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
@@ -149,20 +149,19 @@ Expected behavior:
 ### 6.2 List sendable accounts by channel
 
 ```http
-GET /api/v1/connect/accounts?channel=<email|linkedin|whatsapp>&can_send=true
+GET /api/v2/connect/accounts?channel=<email|linkedin|whatsapp>&can_send=true
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
-Treat an account as sendable only when:
+Treat `can_send` as the decisive sendability field:
 
 ```json
 {
-  "status": "ok",
   "can_send": true
 }
 ```
 
-Also verify that `channel` matches the requested channel.
+Also verify that `channel` matches the requested channel. Do not independently require an exact `status` or `lifecycle_status` value; use them only to explain why `can_send` is false.
 
 Do not require an exact `lifecycle_status` string; use it only as diagnostic context because deployments may expose values such as:
 - `active`
@@ -219,7 +218,7 @@ For `account_not_found`:
 
 ### 429
 
-> Revor rate limited this request. Wait for `Retry-After` if present, then retry.
+> Revor rate limited this request. Wait for `Retry-After` if present, then retry. API and MCP calls share account-level limits, so switching keys or protocols does not bypass the limit.
 
 ### 503
 

@@ -39,11 +39,13 @@ https://revor.ai
 ```
 
 ```http
-POST /api/v1/outreach/linkedin/post-likes
+POST /api/v2/outreach/linkedin/post-likes
 Content-Type: application/json
 Idempotency-Key: <unique-key>
 Authorization: Bearer <REVOR_API_KEY>
 ```
+
+Create a new idempotency key for each new like request and preserve it for an exact retry. The REST header is optional at the protocol level, but this Skill always supplies it because the action changes external state; the equivalent MCP tool requires `idempotency_key`.
 
 Required fields:
 - `profile_url` or `profileUrl`
@@ -95,7 +97,7 @@ A successful create request does not mean the like action has completed.
 After creation, check the job result with:
 
 ```http
-GET /api/v1/outreach/jobs/<job_uuid>
+GET /api/v2/jobs/<job_uuid>
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
@@ -108,6 +110,7 @@ Non-terminal statuses:
 - `queued`
 - `scheduled`
 - `running`
+- `settling`
 
 If the job query returns HTTP `200` but `item.status = "failed"`, treat it as execution failure.
 
@@ -139,7 +142,7 @@ For `external_api_job_not_found`:
 
 ### 429
 
-> Revor rate limited this request. Wait for `Retry-After` if present, then retry.
+> Revor rate limited this request. Wait for `Retry-After` if present, then retry with the same idempotency key. API and MCP calls share account-level limits, so do not switch keys or protocols to evade the limit.
 
 ### 503
 

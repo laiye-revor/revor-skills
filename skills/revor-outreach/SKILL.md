@@ -1,7 +1,6 @@
 ---
 name: revor-outreach
 description: Function-triggered outreach execution via Revor for LinkedIn, Email, and WhatsApp. Use this skill to detect outreach intent, validate sending prerequisites, draft channel-ready copy, and dispatch only after requirements are met and user confirmation is clear. If required recipient/contact data is missing, ask the user to provide it or search it first.
-version: 1.0.0
 metadata:
   openclaw:
     requires:
@@ -30,10 +29,12 @@ It should:
 - detect outreach intent,
 - validate Revor account/API/channel readiness,
 - draft send-ready outreach copy by channel,
-- dispatch via Revor API when conditions are satisfied,
+- dispatch through the available Revor MCP tools or API when conditions are satisfied,
 - return a clear result summary (sent/failed/skipped with reasons).
 
 If required recipient data is missing (`profile_url`, `address`, `phone`), **do not fabricate**. Ask the user to provide it or search it first.
+
+When Revor MCP tools are available, prefer `revor_list_connect_accounts`, `revor_send_outreach`, `revor_like_linkedin_post`, and `revor_get_job`. Otherwise use the API flow in the routed reference files. Do not mix MCP and API retries: they share the same account permissions, limits, credits, jobs, and idempotency semantics.
 
 ---
 
@@ -116,11 +117,11 @@ All required conditions:
 1. User has a Revor account (with usable paid access if required by Revor plan/policy).
 2. User has a valid API key.
 3. User has connected at least one sendable channel account (LinkedIn / Email / WhatsApp).
-4. For the requested channel, a connected account exists with `status="ok"` and `can_send=true`.
+4. For the requested channel, a connected account exists with `can_send=true`. Use other status fields only as diagnostic context.
 
 If missing, guide clearly:
 - Register/login: `https://revor.ai`
-- API key page: `https://revor.ai/my-api-keys`
+- API key page: `https://revor.ai/zh/my-api-keys`
 - Connect send accounts: `https://revor.ai/console/connect`
 
 Important: preserve the reminder style and user guidance in `reference/accounts.md`. Do not reduce it to a terse rejection.
@@ -249,9 +250,11 @@ Only send immediately when the user explicitly asks to send now.
 A `202 Accepted` dispatch or post-like creation response means the job was created, **not** that the action is complete.
 
 Always check the final outcome with:
-- `GET /api/v1/outreach/jobs/{id}`
+- MCP: `revor_get_job`
+- API: `GET /api/v2/jobs/{id}`
 
 If the job lookup returns HTTP `200` but `item.status = "failed"`, treat it as execution failure.
+Treat `settling` as non-terminal and keep checking. If the user asks to cancel, use `revor_cancel_job` or `POST /api/v2/jobs/{id}/cancel`; cancellation is only guaranteed while the job is queued or scheduled.
 
 ---
 

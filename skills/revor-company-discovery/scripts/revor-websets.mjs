@@ -127,10 +127,12 @@ function createPayload(options) {
   if (title.length > 200) throw new Error("--title must be at most 200 characters")
   const locale = option(options, "locale", "en").toLowerCase()
   if (locale !== "en" && locale !== "zh") throw new Error("--locale must be en or zh")
+  const count = integer(options, "count", 25, 25, 1_000)
+  if (![25, 100, 500, 1_000].includes(count)) throw new Error("--count must be 25, 100, 500, or 1000")
   return {
     query,
     ...(title ? { title } : {}),
-    count: 25,
+    count,
     target_kind: "company",
     locale,
   }
@@ -148,7 +150,14 @@ function httpDetails(response, body, apiPath) {
   if (apiCode === "insufficient_credits" || apiCode === "USER_INSUFFICIENT_CREDITS") {
     return { error_kind: "insufficient_credits", api_code: apiCode, retryable: false, recommended_action: "add_credits_then_retry" }
   }
-  if (status === 401 || status === 403) return { error_kind: "authentication_failed", api_code: apiCode, retryable: false, recommended_action: "update_api_key_rerun_config_then_retry" }
+  if (apiCode.includes("job_concurrency_limit_exceeded")) {
+    return { error_kind: "job_concurrency_limit", api_code: apiCode, retryable: true, retry_after: response.headers.get("retry-after") || null, recommended_action: "wait_for_active_jobs_then_retry_same_command" }
+  }
+  if (apiCode === "membership_tier_insufficient" || apiCode.includes("webset_count_not_available_for_tier")) {
+    return { error_kind: "membership_tier_insufficient", api_code: apiCode, retryable: false, recommended_action: "choose_a_count_allowed_by_the_current_plan_or_upgrade" }
+  }
+  if (status === 401) return { error_kind: "authentication_failed", api_code: apiCode, retryable: false, recommended_action: "update_api_key_rerun_config_then_retry" }
+  if (status === 403) return { error_kind: "permission_denied", api_code: apiCode, retryable: false, recommended_action: "update_api_key_permissions_then_retry" }
   if (status === 404 && apiCode.includes("webset_not_found")) return { error_kind: "webset_not_found", api_code: apiCode, retryable: false, recommended_action: "check_webset_id_and_resource_owner" }
   if (status === 404) return { error_kind: "endpoint_not_found", api_code: apiCode, retryable: false, recommended_action: "confirm_base_url_rerun_config_then_retry" }
   if (status === 409) return { error_kind: "webset_state_inconsistent", api_code: apiCode, retryable: false, recommended_action: "report_exact_error_and_ask_user" }

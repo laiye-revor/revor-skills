@@ -5,13 +5,15 @@ description: Discover and rank a list of companies matching a natural-language i
 
 # Revor Company Discovery
 
-Turn a natural-language target profile into one Revor Webset and return its qualified companies. The current public workflow finds 25 companies per search.
+Turn a natural-language target profile into one Revor Webset and return its qualified companies. The default search size is 25 companies; larger supported sizes depend on the user's current Revor plan.
 
-## Use the bundled client
+## Choose one execution route
 
-Resolve `scripts/revor-websets.mjs` relative to this file. Do not recreate the API requests with curl or inline code.
+If `revor_create_webset`, `revor_get_webset`, and `revor_list_webset_items` MCP tools are available, use them. Generate a stable `idempotency_key` for creation, reuse it only for an exact retry, follow the returned Webset until completion, and paginate all qualified items. Skip the local configuration preflight on this route.
 
-Run configuration preflight once before creating a Webset:
+Otherwise resolve `scripts/revor-websets.mjs` relative to this file. Do not recreate the API requests with curl or inline code.
+
+On the bundled-client route, run configuration preflight once before creating a Webset:
 
 ```text
 node <skill-dir>/scripts/revor-websets.mjs config
@@ -42,10 +44,10 @@ Do not invent missing constraints or turn the request into an over-specified che
 Run one search for the request:
 
 ```text
-node <client> search --query "Industrial automation equipment distributors in Southeast Asia" --title "Southeast Asia automation distributors" --locale en --detail standard --page-size 10
+node <client> search --query "Industrial automation equipment distributors in Southeast Asia" --title "Southeast Asia automation distributors" --count 25 --locale en --detail standard --page-size 10
 ```
 
-Use `zh` or `en` according to the user's language. `--title` is optional. The current API fixes `count=25`, `target_kind=company`, and the Open Web source; do not promise another count or a person search. A direct request to find companies authorizes one search. Do not create multiple billable Websets for small query variations unless the user asks.
+Use `zh` or `en` according to the user's language. `--title` is optional. `--count` accepts `25`, `100`, `500`, or `1000`; default to `25` unless the user asks for a larger list. Larger sizes require a plan that supports them. This company-focused Skill always uses `target_kind=company`; do not use it for person discovery. A direct request to find companies authorizes one search. Do not create multiple billable Websets for small query variations unless the user asks.
 
 If execution is interrupted after a `webset_id` is returned, resume the existing Webset instead of creating another:
 
@@ -63,7 +65,7 @@ Choose another mode only when the task requires it:
 
 - `compact`: core company fields plus match status/score; maximum page size 50. Use for broad lists or tight tool-output limits.
 - `standard`: full public company fields, checks, and criterion status/score/weight/reference count; maximum page size 25. This is the client default.
-- `full`: full criterion reasoning and reference URLs; maximum page size 10. Use sparingly because aggregating all 25 detailed results can exceed an Agent platform's tool-output window.
+- `full`: full criterion reasoning and reference URLs; maximum page size 10. Use sparingly because aggregating a large detailed result set can exceed an Agent platform's tool-output window.
 
 Do not request a page size above the mode limit. The client rejects invalid combinations instead of silently clamping them. Continue pagination until `has_more=false`; never treat one page as the complete Webset.
 
@@ -74,7 +76,10 @@ Follow the client's `error_kind` and `recommended_action`. Preserve the `webset_
 - `missing_api_key`, `authentication_failed`: obtain and configure a replacement key, rerun `config`, then retry.
 - `invalid_configuration`, `endpoint_not_found`: show the exact base URL and path; ask the user to correct `REVOR_BASE_URL` rather than guessing another host.
 - `invalid_command`, `invalid_request`: correct a deterministic argument error; ask only when the intended value is ambiguous.
-- `request_timeout`, `connection_failed`, `rate_limited`, `service_unavailable`, `temporary_webset_failure`: retry once, honoring `retry_after` when returned.
+- `permission_denied`: explain that the key lacks the required capability; ask the user to update its permissions or provide a correctly scoped key, then retry.
+- `membership_tier_insufficient`: explain that the requested list size is unavailable on the current plan. Retry with an allowed smaller `--count` only with the user's agreement, or continue after they upgrade.
+- `job_concurrency_limit`: an existing discovery task is using the account's active-job capacity. Wait for it to finish, then retry the same command; do not create a replacement Webset or switch keys/protocols.
+- `request_timeout`, `connection_failed`, `rate_limited`, `service_unavailable`, `temporary_webset_failure`: retry once, honoring `retry_after` when returned. Revor API and MCP access share account-level limits, so do not switch keys or protocols to evade a limit.
 - `webset_timeout`: run `resume` with the returned `webset_id`; do not create a replacement.
 - `insufficient_credits`: ask the user to add credits, then retry.
 - `webset_cancelled`, `webset_not_found`, non-retryable `webset_failed`, or unknown errors: report the exact error and ask for direction.

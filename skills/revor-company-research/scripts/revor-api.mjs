@@ -25,11 +25,26 @@ function httpFailureDetails(status, body, response) {
   if (apiCode === "insufficient_credits" || apiCode === "USER_INSUFFICIENT_CREDITS") {
     return { error_kind: "insufficient_credits", api_code: apiCode, retryable: false, recommended_action: "add_credits_then_retry_failed_command" }
   }
+  if (apiCode.includes("job_concurrency_limit_exceeded")) {
+    return {
+      error_kind: "job_concurrency_limit",
+      api_code: apiCode,
+      retryable: true,
+      retry_after: response.headers.get("retry-after") || null,
+      recommended_action: "wait_for_active_jobs_then_retry_failed_command",
+    }
+  }
+  if (apiCode === "membership_tier_insufficient") {
+    return { error_kind: "membership_tier_insufficient", api_code: apiCode, retryable: false, recommended_action: "upgrade_membership_then_retry_failed_command" }
+  }
   if (status === 400 || status === 422) {
     return { error_kind: "invalid_request", api_code: apiCode, retryable: false, recommended_action: "correct_request_arguments_then_retry" }
   }
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return { error_kind: "authentication_failed", api_code: apiCode, retryable: false, recommended_action: "update_api_key_rerun_config_then_retry_failed_command" }
+  }
+  if (status === 403) {
+    return { error_kind: "permission_denied", api_code: apiCode, retryable: false, recommended_action: "update_api_key_permissions_then_retry_failed_command" }
   }
   if (status === 404) {
     return { error_kind: "endpoint_not_found", api_code: apiCode, retryable: false, recommended_action: "confirm_base_url_rerun_config_then_retry_failed_command" }

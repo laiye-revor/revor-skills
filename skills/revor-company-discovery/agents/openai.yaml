@@ -1,4 +1,4 @@
 interface:
   display_name: "Revor Company Discovery"
   short_description: "Find and rank ICP-matched target companies with Revor"
-  default_prompt: "Use $revor-company-discovery to find 25 companies matching my target profile."
+  default_prompt: "Use $revor-company-discovery to find companies matching my target profile."

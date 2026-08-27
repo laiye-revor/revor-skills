@@ -25,13 +25,15 @@ Produce a practical company background report. Anchor it in the company's offici
 
 Keep research narration out of the final answer. Reply directly in chat with the findings; do not create a report file or artifact.
 
-## Use the bundled client
+## Choose one execution route
 
-Run the sibling script `scripts/revor-api.mjs` for every Revor data call. Resolve its path relative to this `SKILL.md`; do not rewrite its HTTP logic with inline JavaScript or curl.
+If Revor MCP tools are available, use `revor_research_public_web`, `revor_customs_company_candidates`, `revor_customs_full_report`, `revor_find_contacts`, and `revor_get_job`. Generate one stable `idempotency_key` for each new executing call, reuse it only for an exact retry, and poll returned jobs to a terminal state. Skip the local configuration preflight on this route.
+
+Otherwise run the sibling script `scripts/revor-api.mjs` for every Revor data call. Resolve its path relative to this `SKILL.md`; do not rewrite its HTTP logic with inline JavaScript or curl. The investigation flow below applies to both routes; its command examples show the bundled-client form.
 
 ## Mandatory configuration preflight
 
-Run the following command exactly once at the start of every research task, before `public-web` or any other data command:
+When using the bundled-client route, run the following command exactly once at the start of every research task, before `public-web` or any other data command:
 
 ```text
 node <skill-dir>/scripts/revor-api.mjs config
@@ -63,10 +65,13 @@ The client prints `error_kind`, `retryable`, and `recommended_action` for failur
 | Error | Required action |
 | --- | --- |
 | `missing_api_key`, `authentication_failed` | Direct the user to [Revor API Keys](https://revor.ai/zh/my-api-keys) and ask them to send the created/replacement key in the current private conversation. After receiving it, save it to the returned `config_file`, rerun `config`, retry the failed command, and continue. Do not guess why the key was rejected or ask the user to edit the file unless writing fails. |
+| `permission_denied` | Explain that the key is valid but lacks the required capability. Ask the user to update its permissions or provide a correctly scoped key, then rerun `config`, retry the failed command, and continue. Do not describe this as an invalid key. |
+| `membership_tier_insufficient` | Explain that the current Revor plan does not include the requested capability. Continue from the failed command after the user upgrades; do not replace the data source. |
 | `invalid_configuration`, `endpoint_not_found` | Show the exact `base_url` and `path`. Ask the user to confirm/correct `REVOR_BASE_URL`; never guess or silently switch hosts. Then rerun `config`, retry the failed command, and continue. |
 | `endpoint_contract_mismatch` | Report that the configured API host does not yet support explicit customs role/catalog routing. Do not use legacy counts or continue to the paid report; retry after the matching backend version is deployed. |
 | `invalid_request`, `invalid_command` | Read the returned validation message. Correct a deterministic argument mistake and retry once. Ask the user only when their intended value is genuinely ambiguous. |
-| `request_timeout`, `connection_failed`, `rate_limited`, `service_unavailable`, `temporary_job_failure` | Retry the exact same command at most once; for rate limits, honor `retry_after` when present. If the second attempt fails, report the exact error and leave the task ready to resume from that command. |
+| `job_concurrency_limit` | An existing task is using the account's active-job capacity. Wait for it to finish, then retry the exact failed command. Do not create duplicate work or switch API keys/protocols. |
+| `request_timeout`, `connection_failed`, `rate_limited`, `service_unavailable`, `temporary_job_failure` | Retry the exact same command at most once; for rate limits, honor `retry_after` when present. Revor API and MCP access share account-level limits, so do not switch between them to evade a limit. If the second attempt fails, report the exact error and leave the task ready to resume from that command. |
 | `insufficient_credits` | Tell the user credits are insufficient. After they add credits, retry the failed command and continue. |
 | `job_cancelled` | Report that the job was cancelled. Retry only if the user asks. |
 | `job_failed`, `http_error`, `invalid_response`, or unknown non-retryable errors | Report the exact returned error and ask for direction. Do not reinterpret it as empty data. |

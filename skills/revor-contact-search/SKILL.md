@@ -7,11 +7,13 @@ description: Find role-focused company contacts through the Revor contacts API u
 
 Find relevant people at one company from its official domain. This Skill searches contacts only; it does not send messages or run a full company background report.
 
-## Use the bundled client
+## Choose one execution route
 
-Resolve `scripts/revor-contacts.mjs` relative to this file. Do not recreate the API request with curl or inline code.
+If `revor_find_contacts` and `revor_get_job` MCP tools are available, use them. Generate a stable `idempotency_key`, reuse it only for an exact retry, and poll the returned job to a terminal state. Skip the local configuration preflight on this route.
 
-Run configuration preflight once:
+Otherwise resolve `scripts/revor-contacts.mjs` relative to this file. Do not recreate the API request with curl or inline code.
+
+On the bundled-client route, run configuration preflight once:
 
 ```text
 node <skill-dir>/scripts/revor-contacts.mjs config
@@ -59,7 +61,10 @@ Run one search per company. Do not submit repeated queries with minor title vari
 For failures, follow the client's `error_kind` and `recommended_action`:
 
 - authentication/configuration: fix the exact configuration, rerun `config`, then retry;
-- timeout, connection, rate limit, 5xx, or temporary job failure: retry the same command once;
+- permission denied: explain that the key lacks the required contact-search capability; update its permissions or use a correctly scoped key, then retry;
+- membership tier insufficient: explain that the current plan does not include this capability; continue after the user upgrades;
+- active-job concurrency limit: wait for the existing research task to finish, then retry the same command; do not switch keys or protocols;
+- timeout, connection, rate limit, 5xx, or temporary job failure: retry the same command once, honoring `retry_after` when returned. Revor API and MCP access share account-level limits, so switching between them does not bypass a limit;
 - insufficient credits: ask the user to add credits, then retry;
 - invalid command/request: correct a deterministic argument error; ask only if the intended value is ambiguous;
 - unknown non-retryable failure: report the exact error and ask for direction.

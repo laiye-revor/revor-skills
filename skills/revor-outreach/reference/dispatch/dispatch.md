@@ -65,11 +65,13 @@ https://revor.ai
 ```
 
 ```http
-POST /api/v1/outreach/dispatches
+POST /api/v2/outreach/dispatches
 Content-Type: application/json
 Idempotency-Key: <unique-key>
 Authorization: Bearer <REVOR_API_KEY>
 ```
+
+Create a new idempotency key for each new business action and preserve it for an exact retry. The REST header is optional at the protocol level, but this Skill always supplies it because outreach has an external side effect; the equivalent MCP tool requires `idempotency_key`.
 
 Encoding reminder:
 - For Chinese or other non-ASCII message text, send the payload as valid UTF-8 JSON with `Content-Type: application/json`.
@@ -174,7 +176,7 @@ That does **not** mean the message or action has already completed.
 Always check the job result with:
 
 ```http
-GET /api/v1/outreach/jobs/<job_uuid>
+GET /api/v2/jobs/<job_uuid>
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
@@ -199,7 +201,7 @@ Typical create response:
 ## 8) Check Outreach Job
 
 ```http
-GET /api/v1/outreach/jobs/<job_uuid>
+GET /api/v2/jobs/<job_uuid>
 Authorization: Bearer <REVOR_API_KEY>
 ```
 
@@ -212,6 +214,7 @@ Non-terminal statuses:
 - `queued`
 - `scheduled`
 - `running`
+- `settling`
 
 Successful job example:
 
@@ -286,7 +289,7 @@ For `external_api_job_not_found`:
 
 ### 429
 
-> Revor rate limited this request. Wait for `Retry-After` if present, then retry the same business action with the same `Idempotency-Key`.
+> Revor rate limited this request. Wait for `Retry-After` if present, then retry the same business action with the same `Idempotency-Key`. API and MCP calls share account-level limits, so do not switch keys or protocols to evade the limit.
 
 ### 503
 
@@ -294,6 +297,6 @@ For `external_api_job_not_found`:
 
 ### Job failed
 
-When `GET /api/v1/outreach/jobs/{id}` returns `ok: true` and `item.status = "failed"`, treat it as an execution failure, not an HTTP request failure.
+When `GET /api/v2/jobs/{id}` returns `ok: true` and `item.status = "failed"`, treat it as an execution failure, not an HTTP request failure.
 
 > Revor created the job, but the job failed during execution: `<item.error.code>`.
