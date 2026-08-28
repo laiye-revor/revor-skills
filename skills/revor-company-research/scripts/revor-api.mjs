@@ -181,6 +181,13 @@ function integer(options, name, fallback, min, max) {
   return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
 }
 
+function boolean(options, name, fallback = false) {
+  const value = one(options, name, fallback ? "true" : "false").toLowerCase()
+  if (["true", "1", "yes", "y", "on"].includes(value)) return true
+  if (["false", "0", "no", "n", "off"].includes(value)) return false
+  throw new Error(`--${name} must be true or false`)
+}
+
 function required(options, name) {
   const value = one(options, name)
   if (!value) throw new Error(`Missing --${name}`)
@@ -204,13 +211,22 @@ function countryCodes(options) {
   return [...new Set(values)].join(",")
 }
 
+function customsFilters(options) {
+  const originCountryCode = countryCode(options, "origin-country-code")
+  const destinationCountryCode = countryCode(options, "destination-country-code")
+  return {
+    ...(one(options, "hs-code") ? { hs_code: one(options, "hs-code") } : {}),
+    ...(one(options, "product-description") ? { product_description: one(options, "product-description") } : {}),
+    ...(originCountryCode ? { origin_country_code: originCountryCode } : {}),
+    ...(destinationCountryCode ? { destination_country_code: destinationCountryCode } : {}),
+  }
+}
+
 function customsPayload(options) {
   const role = one(options, "company-role", "importer")
   if (role !== "importer" && role !== "exporter") throw new Error("--company-role must be importer or exporter")
   const catalog = one(options, "catalog", role === "exporter" ? "exports" : "imports")
   if (catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
-  const originCountryCode = countryCode(options, "origin-country-code")
-  const destinationCountryCode = countryCode(options, "destination-country-code")
   return {
     company_name: required(options, "company-name"),
     company_role: role,
@@ -220,16 +236,11 @@ function customsPayload(options) {
     page: integer(options, "page", 1, 1, 1_000),
     page_size: integer(options, "page-size", 10, 1, 20),
     period_unit: one(options, "period-unit", "months"),
-    filters: {
-      ...(one(options, "hs-code") ? { hs_code: one(options, "hs-code") } : {}),
-      ...(one(options, "product-description") ? { product_description: one(options, "product-description") } : {}),
-      ...(originCountryCode ? { origin_country_code: originCountryCode } : {}),
-      ...(destinationCountryCode ? { destination_country_code: destinationCountryCode } : {}),
-    },
+    filters: customsFilters(options),
   }
 }
 
-function operationRequest(operation, options) {
+export function operationRequest(operation, options) {
   if (operation === "public-web") {
     const queries = many(options, "query")
     if (!queries.length || queries.length > 2) throw new Error("public-web requires one or two --query values")
@@ -264,6 +275,8 @@ function operationRequest(operation, options) {
     if (role && role !== "importer" && role !== "exporter") throw new Error("--company-role must be importer or exporter")
     const catalog = one(options, "catalog")
     if (catalog && catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
+    const compareCatalogs = boolean(options, "compare-catalogs", false)
+    if (compareCatalogs && !role) throw new Error("--compare-catalogs requires --company-role")
     const candidateCountryCodes = countryCodes(options)
     return {
       path: "/api/v2/customs/company-candidates",
@@ -271,11 +284,13 @@ function operationRequest(operation, options) {
         company_name: required(options, "company-name"),
         ...(role ? { company_role: role } : {}),
         ...(catalog ? { catalog } : {}),
+        ...(compareCatalogs ? { compare_catalogs: true } : {}),
         start_date: required(options, "start-date"),
         end_date: required(options, "end-date"),
         page: integer(options, "page", 1, 1, 1_000),
         page_size: integer(options, "page-size", 20, 1, 20),
         ...(candidateCountryCodes ? { country_codes: candidateCountryCodes } : {}),
+        filters: customsFilters(options),
       },
     }
   }
@@ -348,16 +363,29 @@ async function requestJson(config, apiPath, init = {}) {
   return body
 }
 
-function assertCompanyCandidateRouting(operation, request, item, config) {
+export function assertCompanyCandidateRouting(operation, request, item, config) {
   if (operation !== "company-candidates" || item.status !== "succeeded") return
   const expectedRole = request.payload.company_role
   const expectedCatalog = request.payload.catalog
-  if (!expectedRole || !expectedCatalog) return
+  const compareCatalogs = request.payload.compare_catalogs === true
+  if (!expectedRole || (!expectedCatalog && !compareCatalogs)) return
   const candidates = Array.isArray(item.result?.candidates) ? item.result.candidates : []
-  const routingMatches = candidates.length > 0 && candidates.every((candidate) => (
-    candidate?.trade_counts?.company_role === expectedRole
-    && candidate?.trade_counts?.catalog === expectedCatalog
-  ))
+  const routingEvidence = item.result?.routing_evidence
+  const roleCountKey = expectedRole === "exporter" ? "exporter" : "importer"
+  const routingMatches = compareCatalogs
+    ? routingEvidence?.mode === "compare_catalogs"
+      && routingEvidence?.company_role === expectedRole
+      && ["imports", "exports"].every((catalog) => routingEvidence?.catalogs_checked?.includes(catalog))
+      && candidates.length > 0
+      && candidates.every((candidate) => (
+        candidate?.trade_counts?.company_role === expectedRole
+        && candidate?.trade_counts?.[`imports_as_${roleCountKey}`] !== null
+        && candidate?.trade_counts?.[`exports_as_${roleCountKey}`] !== null
+      ))
+    : candidates.length > 0 && candidates.every((candidate) => (
+      candidate?.trade_counts?.company_role === expectedRole
+      && candidate?.trade_counts?.catalog === expectedCatalog
+    ))
   if (!routingMatches) {
     throw new RevorClientError("The Revor company-candidates endpoint did not honor explicit company_role/catalog routing", {
       error_kind: "endpoint_contract_mismatch",
@@ -366,7 +394,7 @@ function assertCompanyCandidateRouting(operation, request, item, config) {
       base_url: config.baseUrl,
       path: request.path,
       expected_company_role: expectedRole,
-      expected_catalog: expectedCatalog,
+      expected_catalog: compareCatalogs ? ["imports", "exports"] : expectedCatalog,
     })
   }
 }
@@ -452,7 +480,7 @@ async function main() {
   await runJob(config, operation, operationRequest(operation, options), options)
 }
 
-main().catch((error) => {
+function reportFatalError(error) {
   const message = String(error?.message || error)
   const commandError = /^(Missing --|Unexpected argument:|Unknown operation:)| requires | must be /i.test(message)
   const details = error?.details || {
@@ -466,4 +494,8 @@ main().catch((error) => {
     ...details,
   }, null, 2)}\n`)
   process.exitCode = 1
-})
+}
+
+if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
+  main().catch(reportFatalError)
+}

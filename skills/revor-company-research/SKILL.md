@@ -25,6 +25,8 @@ Produce a practical company background report. Anchor it in the company's offici
 
 Keep research narration out of the final answer. Reply directly in chat with the findings; do not create a report file or artifact.
 
+Critical customs-routing rule: a request for a company's export activity normally establishes `company-role=exporter`; it does not establish that the provider `exports` catalog is the right coverage directory. Keep the subject role fixed, apply the user's HS/product/origin/destination filters during candidate verification, and compare catalog evidence when coverage is uncertain. Never silently switch the paid report route.
+
 ## Choose one execution route
 
 If Revor MCP tools are available, use `revor_research_public_web`, `revor_customs_company_candidates`, `revor_customs_full_report`, `revor_find_contacts`, and `revor_get_job`. Generate one stable `idempotency_key` for each new executing call, reuse it only for an exact retry, and poll returned jobs to a terminal state. Skip the local configuration preflight on this route.
@@ -118,7 +120,7 @@ Choose the subject company's role and the customs data catalog independently bef
 - General background, procurement, or supplier diligence defaults to `importer/imports`.
 - Sales, buyer discovery, or customer diligence defaults to `exporter/exports`, but destination-country import data is often the better route. For example, Chinese exporter SANY selling to Indonesian buyers is `company-role=exporter`, `catalog=imports`, and `destination-country-code=IDN`.
 
-Do not assume importer always requires the imports catalog or exporter always requires the exports catalog. When evidence does not support a cross-catalog route, use the role-aligned default and state the selected routing in the final report.
+Do not infer the catalog from wording such as “imports,” “exports,” “进口数据,” or “出口数据” when that wording describes the subject company's activity. It establishes the subject role only. When catalog coverage is uncertain, compare both catalogs under the same role and business filters. Use the returned evidence to choose one report route and state that choice; runtime and client code must not choose or switch it automatically.
 
 Use ISO 3166-1 alpha-3 country codes in Skill commands, such as `CHN`, `IDN`, or `PHL`. The API normalizes valid alpha-2 input, but do not send regional or invented codes such as `EU`.
 
@@ -126,21 +128,21 @@ Use ISO 3166-1 alpha-3 country codes in Skill commands, such as `CHN`, `IDN`, or
 
 Use an explicit date range of at most one year. Unless the user specifies otherwise, use the latest rolling 12 months ending on the current date. Keep exactly the same dates throughout candidate lookup and trade analysis.
 
-After public identity research, query the free company-candidate endpoint with the best-supported official/global name:
+After public identity research, query the currently non-billable company-candidate endpoint with the best-supported official/global name. Pass the same HS/product/origin/destination filters intended for the report. When the role is known but catalog coverage is uncertain, compare both catalogs in one candidate call:
 
 ```text
-node <client> company-candidates --company-name "Supported Company Name" --company-role exporter --catalog imports --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
+node <client> company-candidates --company-name "Supported Company Name" --company-role exporter --compare-catalogs true --hs-code 854419 --origin-country-code CHN --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
 ```
 
-Do not pass a domain as `company-name`. Pass the selected `--company-role` and `--catalog` together. Omit `--country-codes` unless the user explicitly supplied a country for company-candidate filtering; when used, pass comma-separated alpha-3 codes.
+If catalog coverage is already supported by the user's scope or prior evidence, omit `--compare-catalogs` and pass the selected `--company-role` and `--catalog` together. Do not pass a domain as `company-name`. Omit `--country-codes` unless the user explicitly supplied a country for company-identity filtering; it is separate from trade-row origin/destination filters. When used, pass comma-separated alpha-3 codes.
 
-The result verifies the original query and returned candidates using that exact role/catalog combination. A positive count proves only that the exact returned name is queryable for that routing and period. It does not prove legal identity. Select a candidate only when public identity, country, business context, and the routed count jointly support it.
+The result returns `routing_evidence` plus per-route counts. A positive count proves only that the exact returned name is queryable for that role, catalog, dates, and supplied business filters. It does not prove legal identity. Select a candidate and one report catalog only when public identity, country, business context, and the exact-filter routed count jointly support them. An unfiltered company count must not be presented as the filtered report total.
 
 If the first lookup gives no reliable match, make one more lookup using a materially different name supported by the public research or candidate results. Do not invent suffixes, punctuation, translations, abbreviations, or legal forms. If no reliable match remains, end the customs branch and state only that no reliable customs-data match was found for the tested names and scope.
 
 ### 4. Run the trade report
 
-Only run a trade report when the chosen exact candidate has a positive count for the selected role/catalog combination. Copy the candidate name exactly and keep the same role, catalog, and dates used for candidate verification. Add alpha-3 origin or destination filters only when supported by the user's question. Run at most one full trade report for one company background check:
+Only run a trade report when the chosen exact candidate has a positive count for the selected role/catalog and business-filter combination. Copy the candidate name exactly and keep the same role, selected catalog, dates, HS/product filters, and supported origin/destination filters used for candidate verification. Run at most one full trade report for one company background check:
 
 ```text
 node <client> trade-report --company-name "Exact verified candidate" --company-role exporter --catalog imports --destination-country-code IDN --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 10
