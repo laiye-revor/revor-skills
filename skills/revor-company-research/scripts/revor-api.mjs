@@ -275,7 +275,7 @@ export function operationRequest(operation, options) {
     if (role && role !== "importer" && role !== "exporter") throw new Error("--company-role must be importer or exporter")
     const catalog = one(options, "catalog")
     if (catalog && catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
-    const compareCatalogs = boolean(options, "compare-catalogs", false)
+    const compareCatalogs = boolean(options, "compare-catalogs", Boolean(role))
     if (compareCatalogs && !role) throw new Error("--compare-catalogs requires --company-role")
     const candidateCountryCodes = countryCodes(options)
     return {
@@ -284,7 +284,7 @@ export function operationRequest(operation, options) {
         company_name: required(options, "company-name"),
         ...(role ? { company_role: role } : {}),
         ...(catalog ? { catalog } : {}),
-        ...(compareCatalogs ? { compare_catalogs: true } : {}),
+        ...(role || options.has("compare-catalogs") ? { compare_catalogs: compareCatalogs } : {}),
         start_date: required(options, "start-date"),
         end_date: required(options, "end-date"),
         page: integer(options, "page", 1, 1, 1_000),

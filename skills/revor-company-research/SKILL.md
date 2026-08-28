@@ -25,7 +25,7 @@ Produce a practical company background report. Anchor it in the company's offici
 
 Keep research narration out of the final answer. Reply directly in chat with the findings; do not create a report file or artifact.
 
-Critical customs-routing rule: a request for a company's export activity normally establishes `company-role=exporter`; it does not establish that the provider `exports` catalog is the right coverage directory. Keep the subject role fixed, apply the user's HS/product/origin/destination filters during candidate verification, and compare catalog evidence when coverage is uncertain. Never silently switch the paid report route.
+Critical customs-routing rule: a request for a company's export activity normally establishes `company-role=exporter`; it does not establish that the provider `exports` catalog is the right coverage directory. Keep the subject role fixed and apply the user's HS/product/origin/destination filters during candidate verification. Company-candidate lookup compares both catalogs by default when `company-role` is supplied. Set `--compare-catalogs false` only for a deliberate single-catalog probe. Never silently switch the paid report route.
 
 ## Choose one execution route
 
@@ -128,13 +128,13 @@ Use ISO 3166-1 alpha-3 country codes in Skill commands, such as `CHN`, `IDN`, or
 
 Use an explicit date range of at most one year. Unless the user specifies otherwise, use the latest rolling 12 months ending on the current date. Keep exactly the same dates throughout candidate lookup and trade analysis.
 
-After public identity research, query the currently non-billable company-candidate endpoint with the best-supported official/global name. Pass the same HS/product/origin/destination filters intended for the report. When the role is known but catalog coverage is uncertain, compare both catalogs in one candidate call:
+After public identity research, query the currently non-billable company-candidate endpoint with the best-supported official/global name. Pass `company-role` plus the same HS/product/origin/destination filters intended for the report. The candidate command compares both catalogs by default when `company-role` is supplied:
 
 ```text
-node <client> company-candidates --company-name "Supported Company Name" --company-role exporter --compare-catalogs true --hs-code 854419 --origin-country-code CHN --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
+node <client> company-candidates --company-name "Supported Company Name" --company-role exporter --hs-code 854419 --origin-country-code CHN --start-date YYYY-MM-DD --end-date YYYY-MM-DD --page-size 20
 ```
 
-If catalog coverage is already supported by the user's scope or prior evidence, omit `--compare-catalogs` and pass the selected `--company-role` and `--catalog` together. Do not pass a domain as `company-name`. Omit `--country-codes` unless the user explicitly supplied a country for company-identity filtering; it is separate from trade-row origin/destination filters. When used, pass comma-separated alpha-3 codes.
+Only when catalog coverage is already established and a single-directory probe is deliberate, pass the selected `--company-role` and `--catalog` together with `--compare-catalogs false`. Do not pass a domain as `company-name`. Omit `--country-codes` unless the user explicitly supplied a country for company-identity filtering; it is separate from trade-row origin/destination filters. When used, pass comma-separated alpha-3 codes.
 
 The result returns `routing_evidence` plus per-route counts. A positive count proves only that the exact returned name is queryable for that role, catalog, dates, and supplied business filters. It does not prove legal identity. Select a candidate and one report catalog only when public identity, country, business context, and the exact-filter routed count jointly support them. An unfiltered company count must not be presented as the filtered report total.
 

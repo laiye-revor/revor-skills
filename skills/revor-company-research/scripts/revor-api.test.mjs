@@ -10,11 +10,10 @@ function options(input) {
   return new Map(Object.entries(input).map(([key, value]) => [key, [String(value)]]))
 }
 
-test("company candidates forwards exact filters and opt-in catalog comparison", () => {
+test("company candidates forwards exact filters and compares catalogs by default", () => {
   const request = operationRequest("company-candidates", options({
     "company-name": "ZHENGZHOU LP INDUSTRY CO., LTD.",
     "company-role": "exporter",
-    "compare-catalogs": "true",
     "hs-code": "854419",
     "origin-country-code": "chn",
     "start-date": "2025-08-28",
@@ -26,6 +25,20 @@ test("company candidates forwards exact filters and opt-in catalog comparison", 
     hs_code: "854419",
     origin_country_code: "CHN",
   })
+})
+
+test("company candidates preserves an explicit single-catalog probe", () => {
+  const request = operationRequest("company-candidates", options({
+    "company-name": "ZHENGZHOU LP INDUSTRY CO., LTD.",
+    "company-role": "exporter",
+    catalog: "imports",
+    "compare-catalogs": "false",
+    "start-date": "2025-08-28",
+    "end-date": "2026-08-28",
+  }))
+
+  assert.equal(request.payload.compare_catalogs, false)
+  assert.equal(request.payload.catalog, "imports")
 })
 
 test("catalog comparison requires an explicit company role", () => {
