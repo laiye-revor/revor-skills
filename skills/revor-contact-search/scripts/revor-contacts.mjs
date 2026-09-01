@@ -128,8 +128,11 @@ function httpDetails(response, body) {
   if (apiCode === "membership_tier_insufficient") return { error_kind: "membership_tier_insufficient", api_code: apiCode, retryable: false, recommended_action: "upgrade_membership_then_retry" }
   if (status === 401) return { error_kind: "authentication_failed", api_code: apiCode, retryable: false, recommended_action: "update_api_key_rerun_config_then_retry" }
   if (status === 403) return { error_kind: "permission_denied", api_code: apiCode, retryable: false, recommended_action: "update_api_key_permissions_then_retry" }
+  if (status === 404 && String(apiCode).includes("task_not_found")) return { error_kind: "task_not_found", api_code: apiCode, retryable: false, recommended_action: "check_job_id_and_resource_owner" }
+  if (status === 404 && String(apiCode).includes("webset_not_found")) return { error_kind: "webset_not_found", api_code: apiCode, retryable: false, recommended_action: "check_webset_id_and_resource_owner" }
   if (status === 404) return { error_kind: "endpoint_not_found", api_code: apiCode, retryable: false, recommended_action: "confirm_base_url_rerun_config_then_retry" }
   if (status === 400 || status === 422) return { error_kind: "invalid_request", api_code: apiCode, retryable: false, recommended_action: "correct_request_then_retry" }
+  // 兼容仍可能由旧部署返回的 v1 错误码。
   if (apiCode === "insufficient_credits" || apiCode === "USER_INSUFFICIENT_CREDITS") return { error_kind: "insufficient_credits", api_code: apiCode, retryable: false, recommended_action: "add_credits_then_retry" }
   if (status === 408 || status === 429 || status >= 500) {
     return {
@@ -205,21 +208,46 @@ function failedJobDetails(item) {
 }
 
 async function runSearch(config, options) {
-  const initial = await requestJson(config, "/api/v2/research/contacts", {
-    method: "POST",
-    headers: {
-      "Idempotency-Key": `revor-contact-search-${crypto.randomUUID()}`,
-      Prefer: "wait=20",
-    },
-    body: JSON.stringify(payload(options)),
-  })
+  const requestPayload = payload(options)
+  const date = new Date().toISOString().slice(0, 10)
+  const digest = crypto.createHash("sha256").update(JSON.stringify(requestPayload)).digest("hex").slice(0, 24)
+  const idempotencyKey = option(options, "idempotency-key", `revor-contact-search-${date}-${digest}`)
+  let initial
+  try {
+    initial = await requestJson(config, "/api/v2/research/contacts", {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        Prefer: "wait=20",
+      },
+      body: JSON.stringify(requestPayload),
+    })
+  } catch (error) {
+    if (error instanceof ClientError) error.details.idempotency_key = idempotencyKey
+    throw error
+  }
   let item = initial?.item
-  if (!item?.id) throw new Error("Revor response did not contain item.id")
+  if (!item?.id) throw new ClientError("Revor response did not contain item.id", {
+    error_kind: "invalid_response",
+    retryable: false,
+    recommended_action: "report_exact_error_and_ask_user",
+    idempotency_key: idempotencyKey,
+  })
   const deadline = Date.now() + 180_000
   while (!terminalStatuses.has(String(item.status || "")) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 2_000))
-    item = (await requestJson(config, `/api/v2/jobs/${encodeURIComponent(item.id)}`))?.item
-    if (!item?.id) throw new Error("Revor job response did not contain item.id")
+    try {
+      item = (await requestJson(config, `/api/v2/jobs/${encodeURIComponent(item.id)}`))?.item
+    } catch (error) {
+      if (error instanceof ClientError) error.details.idempotency_key = idempotencyKey
+      throw error
+    }
+    if (!item?.id) throw new ClientError("Revor job response did not contain item.id", {
+      error_kind: "invalid_response",
+      retryable: false,
+      recommended_action: "report_exact_error_and_ask_user",
+      idempotency_key: idempotencyKey,
+    })
   }
   if (!terminalStatuses.has(String(item.status || ""))) {
     throw new ClientError("Revor contact job timed out", {
@@ -227,10 +255,12 @@ async function runSearch(config, options) {
       retryable: true,
       recommended_action: "retry_same_command_once",
       job_id: item.id,
+      idempotency_key: idempotencyKey,
     })
   }
   const output = {
     ok: item.status === "succeeded",
+    idempotency_key: idempotencyKey,
     job_id: item.id,
     status: item.status,
     result: item.result ?? null,
@@ -247,12 +277,33 @@ async function main() {
   const options = parseOptions(process.argv.slice(3))
   const config = loadConfig()
   if (operation === "config") {
-    const ready = config.diagnostics.ready
+    if (!config.apiKey) {
+      process.stdout.write(`${JSON.stringify({
+        ok: false,
+        ready: false,
+        base_url: config.baseUrl,
+        api_key_configured: false,
+        api_key_verified: false,
+        api_key_source: config.diagnostics.apiKeySource,
+        base_url_source: config.diagnostics.baseUrlSource,
+        api_key_url: apiKeyUrl,
+        config_file: persistentConfigFile,
+        config_file_exists: config.diagnostics.persistentConfigFileExists,
+        skill_env_file: skillConfigFile,
+        skill_env_file_exists: config.diagnostics.skillConfigFileExists,
+        next_action: `Create a key at ${apiKeyUrl}, send it to the agent in this private conversation, and ask the agent to save it to ${persistentConfigFile}.`,
+      }, null, 2)}\n`)
+      process.exitCode = 2
+      return
+    }
+    const credits = await requestJson(config, "/api/v2/credits")
     process.stdout.write(`${JSON.stringify({
-      ok: ready,
-      ready,
+      ok: true,
+      ready: true,
       base_url: config.baseUrl,
-      api_key_configured: Boolean(config.apiKey),
+      api_key_configured: true,
+      api_key_verified: true,
+      available_credits: credits?.available_credits ?? credits?.item?.available_credits ?? null,
       api_key_source: config.diagnostics.apiKeySource,
       base_url_source: config.diagnostics.baseUrlSource,
       api_key_url: apiKeyUrl,
@@ -260,11 +311,8 @@ async function main() {
       config_file_exists: config.diagnostics.persistentConfigFileExists,
       skill_env_file: skillConfigFile,
       skill_env_file_exists: config.diagnostics.skillConfigFileExists,
-      next_action: ready
-        ? "Configuration is ready."
-        : `Create a key at ${apiKeyUrl}, send it to the agent in this private conversation, and ask the agent to save it to ${persistentConfigFile}.`,
+      next_action: "Configuration is verified.",
     }, null, 2)}\n`)
-    if (!ready) process.exitCode = 2
     return
   }
   if (operation !== "search") throw new Error("Operation must be config or search")

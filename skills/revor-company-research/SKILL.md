@@ -1,21 +1,5 @@
 ---
 name: revor-company-research
-metadata:
-  openclaw:
-    requires:
-      env:
-        - REVOR_API_KEY
-      config:
-        - ~/.config/RevorSkill/.env
-    primaryEnv: REVOR_API_KEY
-    envVars:
-      - name: REVOR_API_KEY
-        required: true
-        description: Revor API key.
-      - name: REVOR_BASE_URL
-        required: false
-        description: Revor API base URL. Defaults to https://revor.ai.
-    homepage: https://revor.ai
 description: Research a company with Revor public-web evidence, customs entity resolution and trade data, and role-focused contacts. Use for company background checks, supplier or buyer due diligence, customer research, trade intelligence, commercial assessment, risk review, meeting preparation, or finding relevant company contacts. Reply directly with a sourced, decision-oriented answer.
 ---
 
@@ -31,7 +15,7 @@ Critical customs-routing rule: a request for a company's export activity normall
 
 If Revor MCP tools are available, use `revor_research_public_web`, `revor_customs_company_candidates`, `revor_customs_full_report`, `revor_find_contacts`, and `revor_get_job`. Generate one stable `idempotency_key` for each new executing call, reuse it only for an exact retry, and poll returned jobs to a terminal state. Skip the local configuration preflight on this route.
 
-Otherwise run the sibling script `scripts/revor-api.mjs` for every Revor data call. Resolve its path relative to this `SKILL.md`; do not rewrite its HTTP logic with inline JavaScript or curl. The investigation flow below applies to both routes; its command examples show the bundled-client form.
+Otherwise run the sibling script `scripts/revor-api.mjs` for every Revor data call. Resolve its path relative to this `SKILL.md`; do not rewrite its HTTP logic with inline JavaScript or curl. The bundled client requires Node.js 18 or newer. The investigation flow below applies to both routes; its command examples show the bundled-client form.
 
 ## Mandatory configuration preflight
 
@@ -80,7 +64,7 @@ The client prints `error_kind`, `retryable`, and `recommended_action` for failur
 
 A successful command with an empty result is not an error. Continue the investigation flow, use its explicitly allowed alternate company-name lookup when applicable, and describe the data coverage limit without treating it as company risk.
 
-Do not substitute OpenClaw `web_search`, `web_fetch`, Google, Bing, DuckDuckGo, or arbitrary scraping after a Revor failure. An API error authorizes only its recovery branch above. Never fabricate or finish a fallback report from unrelated search results.
+Do not substitute built-in web search/fetch tools, Google, Bing, DuckDuckGo, or arbitrary scraping after a Revor failure. An API error authorizes only its recovery branch above. Never fabricate or finish a fallback report from unrelated search results.
 
 For a missing or rejected key, keep the user response short and actionable. Include only:
 
@@ -97,7 +81,7 @@ Do not add speculative causes, environment theories, unrelated troubleshooting, 
 Start with `public-web` and no more than two focused queries. The first batch must contain the exact company name supplied by the user as one bare-name query. Use the second query for a supplied domain, country/native name, or official profile page when useful.
 
 ```text
-node <client> public-web --query "Exact Company Name" --query "Focused identity query" --search-limit 5
+node <client> public-web --query "Exact Company Name" --query "Focused identity query" --search-limit 10
 ```
 
 Identify:

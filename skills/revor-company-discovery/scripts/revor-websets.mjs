@@ -281,7 +281,7 @@ async function readAllQualifiedItems(config, websetId, options) {
       if (!id) throw new ClientError("A Webset result is missing its ID", { error_kind: "invalid_response", retryable: false, recommended_action: "report_exact_error_and_ask_user", webset_id: websetId })
       if (seenIds.has(id)) throw new ClientError("Webset pagination returned a duplicate item", { error_kind: "invalid_response", retryable: false, recommended_action: "report_exact_error_and_ask_user", webset_id: websetId, item_id: id })
       if (match !== "full" && match !== "partial") throw new ClientError("Qualified results contained an invalid match status", { error_kind: "invalid_response", retryable: false, recommended_action: "report_exact_error_and_ask_user", webset_id: websetId, item_id: id, match_status: match || null })
-      if (item?.provisional !== false) throw new ClientError("Completed Webset returned a provisional result", { error_kind: "invalid_response", retryable: true, recommended_action: "retry_resume_once", webset_id: websetId, item_id: id })
+      if (item?.provisional === true) throw new ClientError("Completed Webset returned a provisional result", { error_kind: "invalid_response", retryable: true, recommended_action: "retry_resume_once", webset_id: websetId, item_id: id })
       seenIds.add(id)
       items.push(item)
     }
@@ -335,7 +335,7 @@ function completedOutput(websetId, result) {
     webset_id: websetId,
     status: result.detail.status,
     query: result.detail.query ?? null,
-    title: result.detail.name ?? null,
+    title: result.detail.name ?? result.detail.title ?? null,
     progress: result.detail.progress ?? null,
     criteria: result.detail.criteria ?? [],
     item_detail: result.itemDetail,

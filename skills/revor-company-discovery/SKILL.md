@@ -12,6 +12,7 @@ Turn a natural-language target profile into one Revor Webset and return its qual
 If `revor_create_webset`, `revor_get_webset`, and `revor_list_webset_items` MCP tools are available, use them. Generate a stable `idempotency_key` for creation, reuse it only for an exact retry, follow the returned Webset until completion, and paginate all qualified items. Skip the local configuration preflight on this route.
 
 Otherwise resolve `scripts/revor-websets.mjs` relative to this file. Do not recreate the API requests with curl or inline code.
+The bundled client requires Node.js 18 or newer.
 
 On the bundled-client route, run configuration preflight once before creating a Webset:
 

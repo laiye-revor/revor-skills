@@ -22,6 +22,7 @@ class RevorClientError extends Error {
 
 function httpFailureDetails(status, body, response) {
   const apiCode = body?.error?.code || `http_${status}`
+  // 兼容仍可能由旧部署返回的 v1 错误码。
   if (apiCode === "insufficient_credits" || apiCode === "USER_INSUFFICIENT_CREDITS") {
     return { error_kind: "insufficient_credits", api_code: apiCode, retryable: false, recommended_action: "add_credits_then_retry_failed_command" }
   }
@@ -47,6 +48,12 @@ function httpFailureDetails(status, body, response) {
     return { error_kind: "permission_denied", api_code: apiCode, retryable: false, recommended_action: "update_api_key_permissions_then_retry_failed_command" }
   }
   if (status === 404) {
+    if (String(apiCode).includes("task_not_found")) {
+      return { error_kind: "task_not_found", api_code: apiCode, retryable: false, recommended_action: "check_job_id_and_resource_owner" }
+    }
+    if (String(apiCode).includes("webset_not_found")) {
+      return { error_kind: "webset_not_found", api_code: apiCode, retryable: false, recommended_action: "check_webset_id_and_resource_owner" }
+    }
     return { error_kind: "endpoint_not_found", api_code: apiCode, retryable: false, recommended_action: "confirm_base_url_rerun_config_then_retry_failed_command" }
   }
   if (status === 408) {
@@ -177,8 +184,13 @@ function many(options, name) {
 }
 
 function integer(options, name, fallback, min, max) {
-  const value = Number.parseInt(one(options, name), 10)
-  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
+  const raw = one(options, name)
+  if (!raw) return fallback
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new Error(`--${name} must be an integer from ${min} to ${max}`)
+  }
+  return value
 }
 
 function boolean(options, name, fallback = false) {
@@ -194,9 +206,15 @@ function required(options, name) {
   return value
 }
 
-function countryCode(options, name) {
+function boundedRequired(options, name, min, max) {
+  const value = required(options, name)
+  if (value.length < min || value.length > max) throw new Error(`--${name} must be ${min}-${max} characters`)
+  return value
+}
+
+function customsCountryCode(options, name) {
   const value = one(options, name).toUpperCase()
-  if (value && !/^[A-Z]{2,3}$/.test(value)) throw new Error(`--${name} must be an ISO 3166-1 alpha-2 or alpha-3 country code`)
+  if (value && !/^[A-Z]{3}$/.test(value)) throw new Error(`--${name} must be an ISO 3166-1 alpha-3 country code`)
   return value
 }
 
@@ -205,15 +223,15 @@ function countryCodes(options) {
     .split(",")
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
-  if (values.some((value) => !/^[A-Z]{2,3}$/.test(value))) {
-    throw new Error("--country-codes must contain comma-separated ISO 3166-1 alpha-2 or alpha-3 country codes")
+  if (values.some((value) => !/^[A-Z]{3}$/.test(value))) {
+    throw new Error("--country-codes must contain comma-separated ISO 3166-1 alpha-3 country codes")
   }
   return [...new Set(values)].join(",")
 }
 
 function customsFilters(options) {
-  const originCountryCode = countryCode(options, "origin-country-code")
-  const destinationCountryCode = countryCode(options, "destination-country-code")
+  const originCountryCode = customsCountryCode(options, "origin-country-code")
+  const destinationCountryCode = customsCountryCode(options, "destination-country-code")
   return {
     ...(one(options, "hs-code") ? { hs_code: one(options, "hs-code") } : {}),
     ...(one(options, "product-description") ? { product_description: one(options, "product-description") } : {}),
@@ -228,7 +246,7 @@ function customsPayload(options) {
   const catalog = one(options, "catalog", role === "exporter" ? "exports" : "imports")
   if (catalog !== "imports" && catalog !== "exports") throw new Error("--catalog must be imports or exports")
   return {
-    company_name: required(options, "company-name"),
+    company_name: boundedRequired(options, "company-name", 2, 300),
     company_role: role,
     catalog,
     start_date: required(options, "start-date"),
@@ -248,12 +266,18 @@ export function operationRequest(operation, options) {
       path: "/api/v2/research/public-web",
       payload: {
         queries,
-        search_limit: integer(options, "search-limit", 5, 1, 10),
+        search_limit: integer(options, "search-limit", 10, 1, 10),
         ...(one(options, "category") ? { category: one(options, "category") } : {}),
         ...(one(options, "include-domains")
           ? { include_domains: one(options, "include-domains").split(",").map((item) => item.trim()).filter(Boolean) }
           : {}),
-        ...(one(options, "user-location") ? { user_location: one(options, "user-location") } : {}),
+        ...(one(options, "user-location")
+          ? { user_location: (() => {
+              const value = one(options, "user-location").toUpperCase()
+              if (!/^[A-Z]{2}$/.test(value)) throw new Error("--user-location must be an ISO 3166-1 alpha-2 country code")
+              return value
+            })() }
+          : {}),
       },
     }
   }
@@ -281,7 +305,7 @@ export function operationRequest(operation, options) {
     return {
       path: "/api/v2/customs/company-candidates",
       payload: {
-        company_name: required(options, "company-name"),
+        company_name: boundedRequired(options, "company-name", 2, 300),
         ...(role ? { company_role: role } : {}),
         ...(catalog ? { catalog } : {}),
         ...(role || options.has("compare-catalogs") ? { compare_catalogs: compareCatalogs } : {}),
@@ -364,28 +388,19 @@ async function requestJson(config, apiPath, init = {}) {
 }
 
 export function assertCompanyCandidateRouting(operation, request, item, config) {
-  if (operation !== "company-candidates" || item.status !== "succeeded") return
+  if (operation !== "company-candidates" || item.status !== "succeeded") return null
   const expectedRole = request.payload.company_role
   const expectedCatalog = request.payload.catalog
   const compareCatalogs = request.payload.compare_catalogs === true
-  if (!expectedRole || (!expectedCatalog && !compareCatalogs)) return
-  const candidates = Array.isArray(item.result?.candidates) ? item.result.candidates : []
-  const routingEvidence = item.result?.routing_evidence
-  const roleCountKey = expectedRole === "exporter" ? "exporter" : "importer"
-  const routingMatches = compareCatalogs
-    ? routingEvidence?.mode === "compare_catalogs"
-      && routingEvidence?.company_role === expectedRole
-      && ["imports", "exports"].every((catalog) => routingEvidence?.catalogs_checked?.includes(catalog))
-      && candidates.length > 0
-      && candidates.every((candidate) => (
-        candidate?.trade_counts?.company_role === expectedRole
-        && candidate?.trade_counts?.[`imports_as_${roleCountKey}`] !== null
-        && candidate?.trade_counts?.[`exports_as_${roleCountKey}`] !== null
-      ))
-    : candidates.length > 0 && candidates.every((candidate) => (
-      candidate?.trade_counts?.company_role === expectedRole
-      && candidate?.trade_counts?.catalog === expectedCatalog
-    ))
+  if (!expectedRole || (!expectedCatalog && !compareCatalogs)) return null
+  const evidence = item.result?.routing_evidence
+  const catalogs = Array.isArray(evidence?.catalogs_checked) ? evidence.catalogs_checked : []
+  const expectedCatalogs = compareCatalogs ? ["imports", "exports"] : [expectedCatalog]
+  const routingMatches = evidence
+    && typeof evidence === "object"
+    && evidence.company_role === expectedRole
+    && (!compareCatalogs || evidence.mode === "compare_catalogs")
+    && expectedCatalogs.every((catalog) => catalogs.includes(catalog))
   if (!routingMatches) {
     throw new RevorClientError("The Revor company-candidates endpoint did not honor explicit company_role/catalog routing", {
       error_kind: "endpoint_contract_mismatch",
@@ -394,46 +409,89 @@ export function assertCompanyCandidateRouting(operation, request, item, config) 
       base_url: config.baseUrl,
       path: request.path,
       expected_company_role: expectedRole,
-      expected_catalog: compareCatalogs ? ["imports", "exports"] : expectedCatalog,
+      expected_catalog: expectedCatalogs,
     })
   }
+  return null
+}
+
+function defaultIdempotencyKey(operation, payload) {
+  const date = new Date().toISOString().slice(0, 10)
+  const digest = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 24)
+  return `revor-${operation}-${date}-${digest}`
 }
 
 async function runJob(config, operation, request, options) {
-  const idempotencyKey = `revor-skill-${operation}-${crypto.randomUUID()}`
-  const initial = await requestJson(config, request.path, {
-    method: "POST",
-    headers: {
-      "Idempotency-Key": idempotencyKey,
-      Prefer: "wait=20",
-    },
-    body: JSON.stringify(request.payload),
-  })
+  const idempotencyKey = one(options, "idempotency-key", defaultIdempotencyKey(operation, request.payload))
+  let initial
+  try {
+    initial = await requestJson(config, request.path, {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        Prefer: "wait=20",
+      },
+      body: JSON.stringify(request.payload),
+    })
+  } catch (error) {
+    if (error instanceof RevorClientError) error.details.idempotency_key = idempotencyKey
+    throw error
+  }
   let item = initial?.item
-  if (!item?.id) throw new Error("Revor response did not contain item.id")
+  if (!item?.id) throw new RevorClientError("Revor response did not contain item.id", {
+    error_kind: "invalid_response",
+    retryable: false,
+    recommended_action: "report_exact_error_and_ask_user",
+    idempotency_key: idempotencyKey,
+  })
 
   const pollIntervalMs = integer(options, "poll-interval-ms", 2_000, 500, 30_000)
   const pollTimeoutMs = integer(options, "poll-timeout-ms", 180_000, 5_000, 30 * 60_000)
   const deadline = Date.now() + pollTimeoutMs
   while (!terminalStatuses.has(String(item.status || "")) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    const current = await requestJson(config, `/api/v2/jobs/${encodeURIComponent(item.id)}`)
+    let current
+    try {
+      current = await requestJson(config, `/api/v2/jobs/${encodeURIComponent(item.id)}`)
+    } catch (error) {
+      if (error instanceof RevorClientError) error.details.idempotency_key = idempotencyKey
+      throw error
+    }
     item = current?.item
-    if (!item?.id) throw new Error("Revor job response did not contain item.id")
+    if (!item?.id) throw new RevorClientError("Revor job response did not contain item.id", {
+      error_kind: "invalid_response",
+      retryable: false,
+      recommended_action: "report_exact_error_and_ask_user",
+      idempotency_key: idempotencyKey,
+    })
   }
   if (!terminalStatuses.has(String(item.status || ""))) {
-    throw new Error(`Revor job timed out: ${item.id}`)
+    throw new RevorClientError(`Revor job timed out: ${item.id}`, {
+      error_kind: "job_timeout",
+      retryable: true,
+      recommended_action: "retry_same_command_once",
+      job_id: item.id,
+      idempotency_key: idempotencyKey,
+    })
   }
-  assertCompanyCandidateRouting(operation, request, item, config)
+  let warning
+  try {
+    warning = assertCompanyCandidateRouting(operation, request, item, config)
+  } catch (error) {
+    if (error instanceof RevorClientError) error.details.idempotency_key = idempotencyKey
+    throw error
+  }
 
   const output = {
     ok: item.status === "succeeded",
+    idempotency_key: idempotencyKey,
     job_id: item.id,
     action: item.action,
     status: item.status,
     result: item.result ?? null,
     error: item.error ?? null,
     billing: item.billing ?? null,
+    ...(warning ? { warning } : {}),
     ...(item.status === "succeeded" ? {} : jobFailureDetails(item)),
   }
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`)
@@ -446,14 +504,35 @@ async function main() {
   const config = loadConfig()
   if (operation === "config") {
     const diagnostics = config.diagnostics
-    const nextAction = diagnostics.ready
-      ? "Configuration is ready. Use this exact base_url for all Revor calls in this task."
-      : `Create an API key at ${apiKeyManagementUrl}, set REVOR_API_KEY in ${diagnostics.persistentConfigFile} or in the process environment, then run config again.`
+    if (!config.apiKey) {
+      process.stdout.write(`${JSON.stringify({
+        ok: false,
+        ready: false,
+        base_url: config.baseUrl,
+        api_key_configured: false,
+        api_key_verified: false,
+        api_key_source: diagnostics.apiKeySource,
+        base_url_source: diagnostics.baseUrlSource,
+        using_default_base_url: diagnostics.usingDefaultBaseUrl,
+        api_key_url: apiKeyManagementUrl,
+        config_file: diagnostics.persistentConfigFile,
+        config_file_exists: diagnostics.persistentConfigFileExists,
+        skill_env_file: diagnostics.skillConfigFile,
+        skill_env_file_exists: diagnostics.skillConfigFileExists,
+        config_precedence: ["persistent_config_file", "process_environment", "skill_env_file", "default_base_url_only"],
+        next_action: `Create an API key at ${apiKeyManagementUrl}, set REVOR_API_KEY in ${diagnostics.persistentConfigFile} or in the process environment, then run config again.`,
+      }, null, 2)}\n`)
+      process.exitCode = 2
+      return
+    }
+    const credits = await requestJson(config, "/api/v2/credits")
     process.stdout.write(`${JSON.stringify({
-      ok: diagnostics.ready,
-      ready: diagnostics.ready,
+      ok: true,
+      ready: true,
       base_url: config.baseUrl,
-      api_key_configured: Boolean(config.apiKey),
+      api_key_configured: true,
+      api_key_verified: true,
+      available_credits: credits?.available_credits ?? credits?.item?.available_credits ?? null,
       api_key_source: diagnostics.apiKeySource,
       base_url_source: diagnostics.baseUrlSource,
       using_default_base_url: diagnostics.usingDefaultBaseUrl,
@@ -463,9 +542,8 @@ async function main() {
       skill_env_file: diagnostics.skillConfigFile,
       skill_env_file_exists: diagnostics.skillConfigFileExists,
       config_precedence: ["persistent_config_file", "process_environment", "skill_env_file", "default_base_url_only"],
-      next_action: nextAction,
+      next_action: "Configuration is verified. Use this exact base_url for all Revor calls in this task.",
     }, null, 2)}\n`)
-    if (!diagnostics.ready) process.exitCode = 2
     return
   }
   if (!config.apiKey) {

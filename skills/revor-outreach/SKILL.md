@@ -1,22 +1,6 @@
 ---
 name: revor-outreach
 description: Function-triggered outreach execution via Revor for LinkedIn, Email, and WhatsApp. Use this skill to detect outreach intent, validate sending prerequisites, draft channel-ready copy, and dispatch only after requirements are met and user confirmation is clear. If required recipient/contact data is missing, ask the user to provide it or search it first.
-metadata:
-  openclaw:
-    requires:
-      env:
-        - REVOR_API_KEY
-      config:
-        - ~/.config/RevorSkill/.env
-    primaryEnv: REVOR_API_KEY
-    envVars:
-      - name: REVOR_API_KEY
-        required: true
-        description: Revor API key used to read connected accounts and dispatch outreach jobs.
-      - name: REVOR_BASE_URL
-        required: false
-        description: Optional Revor API base URL. Defaults to https://revor.ai.
-    homepage: https://revor.ai
 ---
 
 # Revor Outreach (Function-Triggered)
@@ -174,7 +158,7 @@ If any required field is missing:
 Prefer persistent configuration so new windows/sessions do not require reconfiguration.
 
 Resolve secrets in this order:
-1. `~/.config/RevorSkill/.env` (OpenClaw/local persistent default)
+1. `~/.config/RevorSkill/.env` (local persistent default)
 2. Platform persistent config (e.g., Claude Desktop MCP server `env` in `claude_desktop_config.json`)
 3. Process/runtime environment (session-scoped fallback)
 4. `<current-skill-dir>/.env` (last fallback)

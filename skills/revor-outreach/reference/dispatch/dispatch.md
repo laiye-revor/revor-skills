@@ -88,10 +88,8 @@ Required top-level fields:
 | `recipient` | yes | Channel-specific recipient data. |
 | `content` | yes | Channel-specific message content. |
 
-Optional scheduling fields:
+Optional scheduling field:
 - `min_channel_task_interval_seconds`
-- `minChannelTaskIntervalSeconds`
-- `min_user_task_interval_seconds`
 
 The interval is clamped to `60..86400` seconds and applies per user + channel.
 For planned or batch outreach, generate a randomized `min_channel_task_interval_seconds` for each task instead of reusing a fixed value. Use `180..360` seconds as the default recommended range unless the user gives a stricter cadence. Never send a value below `60`; Revor will clamp it to `60`.
@@ -188,7 +186,7 @@ Typical create response:
   "request_id": "req_xxx",
   "item": {
     "id": "job_uuid",
-    "status": "queued",
+    "status": "scheduled",
     "action": "outreach.dispatch",
     "channel": "email",
     "scheduled_at": "2026-05-20T10:00:00.000Z"

@@ -61,7 +61,7 @@ When readiness is missing, keep the guidance warm and practical.
   - connected LinkedIn/Email/WhatsApp account = the actual sending channel
   - API key = the permission key that allows the agent to dispatch through Revor
 - Explicitly tell the user the expected variable name: `REVOR_API_KEY`, and clearly point to persistent config locations first:
-  - OpenClaw/local persistent path: `~/.config/RevorSkill/.env`
+  - Local persistent path: `~/.config/RevorSkill/.env`
   - Claude Desktop + MCP persistent config: target MCP server `env` in `claude_desktop_config.json`
   - Claude Code/CLI: persistent shell profile/env tooling (not a one-off session export)
 - If the user does not want to configure it manually, offer to configure it directly for them at the correct path.
@@ -85,7 +85,7 @@ When readiness is missing, keep the guidance warm and practical.
 >
 > The key I need is `REVOR_API_KEY`.
 > Recommended persistent config locations:
-> - OpenClaw/local: `~/.config/RevorSkill/.env`
+> - Local persistent config: `~/.config/RevorSkill/.env`
 > - Claude Desktop MCP: target server `env` in `claude_desktop_config.json`
 > - Claude Code/CLI: persistent shell profile/env tooling
 >
@@ -105,7 +105,7 @@ https://revor.ai
 ```
 
 Resolve secrets in this order:
-1. `~/.config/RevorSkill/.env` (OpenClaw/local persistent default)
+1. `~/.config/RevorSkill/.env` (local persistent default)
 2. Platform persistent config (e.g., Claude Desktop MCP server `env` in `claude_desktop_config.json`)
 3. Process/runtime environment (session-scoped fallback)
 4. `<current-skill-dir>/.env` (last fallback)
@@ -142,7 +142,7 @@ Expected behavior:
 - `200` -> key works and account listing is allowed
 - `401` -> key missing / invalid / revoked / expired
 - `403` -> key does not have `connect.accounts:read`
-- `429` -> key, user, or pre-auth rate limit was exceeded
+- `429` -> an account-level request limit was exceeded
 
 ---
 

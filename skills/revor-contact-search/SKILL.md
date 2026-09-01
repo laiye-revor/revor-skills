@@ -12,6 +12,7 @@ Find relevant people at one company from its official domain. This Skill searche
 If `revor_find_contacts` and `revor_get_job` MCP tools are available, use them. Generate a stable `idempotency_key`, reuse it only for an exact retry, and poll the returned job to a terminal state. Skip the local configuration preflight on this route.
 
 Otherwise resolve `scripts/revor-contacts.mjs` relative to this file. Do not recreate the API request with curl or inline code.
+The bundled client requires Node.js 18 or newer.
 
 On the bundled-client route, run configuration preflight once:
 
